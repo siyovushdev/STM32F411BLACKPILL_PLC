@@ -219,6 +219,9 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
 
         case PLC_LINK_CMD_GET_STATUS_EXT:
         case PLC_LINK_CMD_GET_NODE:
+        case PLC_LINK_CMD_GET_STATUS_WEB_V2:
+        case PLC_LINK_CMD_GET_NODES_SNAPSHOT:
+        case PLC_LINK_CMD_GET_IO_SUMMARY:
             if (!plc_link_ext_handle((PlcLinkCommand)cmd, seq, body, body_len)) {
                 (void)send_error(seq, PLC_LINK_ERR_UNKNOWN_CMD, cmd);
             }

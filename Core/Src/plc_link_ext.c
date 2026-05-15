@@ -7,7 +7,7 @@
 #include "plc_persist.h"
 #include "plc_persist_service.h"
 #include "plc_platform.h"
-
+#include "friendly_plc/plc_types.h"
 #include "friendly_plc/plc_snapshot.h"
 #include "friendly_plc/plc_memory.h"
 #include <stdbool.h>
@@ -15,9 +15,21 @@
 #include <string.h>
 
 #define EXT_STATUS_VERSION 1u
-#define EXT_NODE_VERSION   1u
-
+#define EXT_STATUS_WEB_VERSION 2u
+#define EXT_NODE_VERSION 1u
+#define EXT_NODES_SNAPSHOT_VERSION 1u
 #define EXT_MEM_VERSION 1u
+
+#define PLC_HW_DI_TOTAL 1u
+#define PLC_HW_DO_TOTAL 1u
+#define PLC_HW_AI_TOTAL 0u
+#define PLC_HW_AO_TOTAL 0u
+#define PLC_HW_PWM_TOTAL 0u
+#define PLC_HW_HSC_TOTAL 0u
+#define PLC_HW_ENCODER_TOTAL 0u
+
+#define EXT_STATUS_WEB_VERSION 2u
+#define EXT_NODES_SNAPSHOT_VERSION 1u
 
 #define U16_LE(p) ((uint16_t)((uint16_t)(p)[0] | ((uint16_t)(p)[1] << 8u)))
 
@@ -191,6 +203,377 @@ static bool send_status_ext(uint16_t seq)
     put_u32(&body[220], ds.persist_stack_used_words);
 
     return plc_link_send_response(PLC_LINK_RSP_STATUS_EXT, seq, body, sizeof(body));
+}
+
+static bool send_status_web_v2(uint16_t seq)
+{
+    PlcRuntimeSnapshot rs;
+    PlcGraphLoaderStatus gs;
+    PlcLinkUartStats us;
+    PlcPersistStatus ps;
+    PlcPersistServiceStatus pss;
+    PlcDiagStatus ds;
+
+    memset(&rs, 0, sizeof(rs));
+    memset(&gs, 0, sizeof(gs));
+    memset(&us, 0, sizeof(us));
+    memset(&ps, 0, sizeof(ps));
+    memset(&pss, 0, sizeof(pss));
+    memset(&ds, 0, sizeof(ds));
+
+    (void)plc_snapshot_get_runtime(&rs);
+    plc_graph_loader_get_status(&gs);
+    plc_link_uart_get_stats(&us);
+    plc_persist_get_status(&ps);
+    plc_persist_service_get_status(&pss);
+    plc_diag_get_status(&ds);
+
+    uint8_t body[160];
+    memset(body, 0, sizeof(body));
+
+    uint32_t run_state = 0u;
+    if (rs.safeOrFaulted) {
+        run_state = 3u; /* FAULT */
+    } else if (rs.running) {
+        run_state = 1u; /* RUN */
+    } else {
+        run_state = 0u; /* STOP */
+    }
+
+    uint32_t capabilities = 0u;
+    capabilities |= (1u << 0); /* NODE_SNAPSHOT later */
+    capabilities |= (1u << 1); /* IO_SUMMARY later */
+
+    uint32_t memory_usage_x100 = 0u;
+    if (ds.heap_total_bytes > 0u) {
+        uint32_t used = ds.heap_total_bytes - ds.heap_free_bytes;
+        memory_usage_x100 = (used * 10000u) / ds.heap_total_bytes;
+    }
+
+    /*
+     * WEB2 payload layout, little-endian:
+     *
+     *  0  u32 magic 'WEB2'
+     *  4  u32 version
+     *  8  u32 now_ms
+     * 12  u32 capabilities
+     * 16  u32 run_state: 0 STOP, 1 RUN, 2 SAFE, 3 FAULT
+     *
+     * Runtime:
+     * 20  u32 cycle_ms
+     * 24  u32 node_count
+     * 28  u32 cycle_counter
+     * 32  u32 last_cycle_us
+     * 36  u32 max_cycle_us
+     * 40  u32 fault_counter
+     * 44  u32 runtime_last_fault
+     *
+     * Graph:
+     * 48  u32 active_graph_version
+     * 52  u32 active_graph_size
+     * 56  u32 active_graph_crc32
+     * 60  u32 uploaded_bytes
+     * 64  u32 graph_last_error
+     *
+     * UART:
+     * 68  u32 rx_ok
+     * 72  u32 tx_frames
+     * 76  u32 crc_errors
+     * 80  u32 size_errors
+     * 84  u32 rx_overflows
+     * 88  u32 tx_errors
+     * 92  u32 uart_errors
+     *
+     * Memory:
+     * 96  u32 heap_total
+     * 100 u32 heap_free
+     * 104 u32 heap_min
+     * 108 u32 memory_usage_x100
+     *
+     * Persist:
+     * 112 u32 persist_active_version
+     * 116 u32 persist_active_size
+     * 120 u32 persist_active_crc32
+     * 124 u32 persist_last_result
+     *
+     * Reserved for next real fields:
+     * 128..159 reserved
+     */
+
+    put_u32(&body[0],  0x32424557u); /* 'WEB2' */
+    put_u32(&body[4],  EXT_STATUS_WEB_VERSION);
+    put_u32(&body[8],  plc_platform_now_ms());
+    put_u32(&body[12], capabilities);
+    put_u32(&body[16], run_state);
+
+    put_u32(&body[20], rs.cycleMs);
+    put_u32(&body[24], (uint32_t)rs.nodeCount);
+    put_u32(&body[28], rs.cycleCounter);
+    put_u32(&body[32], rs.lastCycleUs);
+    put_u32(&body[36], rs.maxCycleUs);
+    put_u32(&body[40], rs.faultCounter);
+    put_u32(&body[44], (uint32_t)rs.runtimeLastFault);
+
+    put_u32(&body[48], gs.active_version);
+    put_u32(&body[52], ps.active_size);
+    put_u32(&body[56], ps.active_crc32);
+    put_u32(&body[60], gs.uploaded_bytes);
+    put_u32(&body[64], gs.last_error);
+
+    put_u32(&body[68], us.rx_frames_ok);
+    put_u32(&body[72], us.tx_frames);
+    put_u32(&body[76], us.rx_crc_errors);
+    put_u32(&body[80], us.rx_size_errors);
+    put_u32(&body[84], us.rx_overflows);
+    put_u32(&body[88], us.tx_errors);
+    put_u32(&body[92], us.uart_errors);
+
+    put_u32(&body[96],  ds.heap_total_bytes);
+    put_u32(&body[100], ds.heap_free_bytes);
+    put_u32(&body[104], ds.heap_min_ever_free_bytes);
+    put_u32(&body[108], memory_usage_x100);
+
+    put_u32(&body[112], ps.active_version);
+    put_u32(&body[116], ps.active_size);
+    put_u32(&body[120], ps.active_crc32);
+    put_u32(&body[124], (uint32_t)ps.last_result);
+
+    return plc_link_send_response(
+            PLC_LINK_RSP_STATUS_WEB_V2,
+            seq,
+            body,
+            sizeof(body)
+    );
+}
+
+static bool send_io_summary(uint16_t seq)
+{
+    PlcRuntimeSnapshot rs;
+    memset(&rs, 0, sizeof(rs));
+    (void)plc_snapshot_get_runtime(&rs);
+
+    uint16_t di_used = 0u;
+    uint16_t do_used = 0u;
+    uint16_t ai_used = 0u;
+    uint16_t ao_used = 0u;
+    uint16_t pwm_used = 0u;
+    uint16_t hsc_used = 0u;
+    uint16_t encoder_used = 0u;
+
+    for (uint16_t i = 0u; i < rs.nodeCount; i++) {
+        PlcNodeSnapshot ns;
+        memset(&ns, 0, sizeof(ns));
+
+        if (!plc_snapshot_get_node(i, &ns)) {
+            continue;
+        }
+
+        switch ((PlcNodeType)ns.type) {
+            case PLC_NODE_DIGITAL_IN:
+                di_used++;
+                break;
+
+            case PLC_NODE_DIGITAL_OUT:
+            case PLC_NODE_SAFE_OUTPUT:
+                do_used++;
+                break;
+
+            case PLC_NODE_AI_IN:
+                ai_used++;
+                break;
+
+            case PLC_NODE_AO:
+                ao_used++;
+                break;
+
+            case PLC_NODE_HSC_IN:
+                hsc_used++;
+                break;
+
+            case PLC_NODE_ENCODER_IN:
+                encoder_used++;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    uint8_t body[36];
+    memset(body, 0, sizeof(body));
+
+    put_u32(&body[0], 0x31534F49u); /* 'IOS1' */
+    put_u32(&body[4], 1u);
+
+    put_u16(&body[8],  di_used);
+    put_u16(&body[10], PLC_HW_DI_TOTAL);
+
+    put_u16(&body[12], do_used);
+    put_u16(&body[14], PLC_HW_DO_TOTAL);
+
+    put_u16(&body[16], ai_used);
+    put_u16(&body[18], PLC_HW_AI_TOTAL);
+
+    put_u16(&body[20], ao_used);
+    put_u16(&body[22], PLC_HW_AO_TOTAL);
+
+    put_u16(&body[24], pwm_used);
+    put_u16(&body[26], PLC_HW_PWM_TOTAL);
+
+    put_u16(&body[28], hsc_used);
+    put_u16(&body[30], PLC_HW_HSC_TOTAL);
+
+    put_u16(&body[32], encoder_used);
+    put_u16(&body[34], PLC_HW_ENCODER_TOTAL);
+
+    return plc_link_send_response(
+            PLC_LINK_RSP_IO_SUMMARY,
+            seq,
+            body,
+            sizeof(body)
+    );
+}
+
+static bool send_nodes_snapshot(uint16_t seq, const uint8_t* body, uint16_t body_len)
+{
+    /*
+     * Request body:
+     * 0..1 u16 chunk_index
+     *
+     * Response body layout, little-endian:
+     *
+     *  0  u32 magic 'NSN1'
+     *  4  u32 version
+     *  8  u16 total_nodes
+     * 10  u16 chunk_index
+     * 12  u16 chunk_count
+     * 14  u16 nodes_in_chunk
+     *
+     * Node record, 40 bytes each:
+     *  +0  u16 index
+     *  +2  u16 id
+     *  +4  u32 type
+     *  +8  u32 flags
+     *  +12 u32 out_bool
+     *  +16 i32 out_int
+     *  +20 f32 out_float
+     *  +24 u32 force_enabled
+     *  +28 u32 force_bool
+     *  +32 u32 force_left_ms
+     *  +36 u32 runtime_flags
+     */
+
+    if (body == NULL || body_len != 2u) {
+        return plc_link_send_error_response(seq, PLC_LINK_ERR_BAD_SIZE, body_len);
+    }
+
+    const uint16_t requested_chunk = ext_get_u16(&body[0]);
+
+    PlcRuntimeSnapshot rs;
+    memset(&rs, 0, sizeof(rs));
+    (void)plc_snapshot_get_runtime(&rs);
+
+    const uint16_t total_nodes = rs.nodeCount;
+
+    /*
+     * 16 header + 8 nodes * 40 bytes = 336 bytes payload.
+     * If PLC_LINK_MAX_BODY_SIZE is lower in your project, reduce this to 4.
+     */
+    const uint16_t nodes_per_chunk = 8u;
+    const uint16_t chunk_count =
+            (total_nodes == 0u)
+            ? 1u
+            : (uint16_t)((total_nodes + nodes_per_chunk - 1u) / nodes_per_chunk);
+
+    if (requested_chunk >= chunk_count) {
+        return plc_link_send_error_response(seq, PLC_LINK_ERR_BAD_INDEX, requested_chunk);
+    }
+
+    const uint16_t start_index = (uint16_t)(requested_chunk * nodes_per_chunk);
+    uint16_t nodes_in_chunk = 0u;
+
+    if (total_nodes > start_index) {
+        uint16_t remaining = (uint16_t)(total_nodes - start_index);
+        nodes_in_chunk = (remaining > nodes_per_chunk) ? nodes_per_chunk : remaining;
+    }
+
+    uint8_t rsp[16u + (8u * 40u)];
+    memset(rsp, 0, sizeof(rsp));
+
+    put_u32(&rsp[0], 0x314E534Eu); /* 'NSN1' */
+    put_u32(&rsp[4], EXT_NODES_SNAPSHOT_VERSION);
+    put_u16(&rsp[8], total_nodes);
+    put_u16(&rsp[10], requested_chunk);
+    put_u16(&rsp[12], chunk_count);
+    put_u16(&rsp[14], nodes_in_chunk);
+
+    for (uint16_t i = 0u; i < nodes_in_chunk; i++) {
+        const uint16_t node_index = (uint16_t)(start_index + i);
+
+        PlcNodeSnapshot ns;
+        memset(&ns, 0, sizeof(ns));
+
+        if (!plc_snapshot_get_node(node_index, &ns)) {
+            continue;
+        }
+
+        uint8_t* p = &rsp[16u + ((uint16_t)i * 40u)];
+
+        uint32_t runtime_flags = 0u;
+
+        if (ns.tonActive) {
+            runtime_flags |= (1u << 0);
+        }
+
+        if (ns.toffHolding) {
+            runtime_flags |= (1u << 1);
+        }
+
+        if (ns.srQ) {
+            runtime_flags |= (1u << 2);
+        }
+
+        if (ns.trigPrev) {
+            runtime_flags |= (1u << 3);
+        }
+
+        if (ns.pidInited) {
+            runtime_flags |= (1u << 4);
+        }
+
+        if (ns.filterInited) {
+            runtime_flags |= (1u << 5);
+        }
+
+        if (ns.rampInited) {
+            runtime_flags |= (1u << 6);
+        }
+
+        if (ns.aoZeroHold) {
+            runtime_flags |= (1u << 7);
+        }
+
+        put_u16(&p[0], ns.index);
+        put_u16(&p[2], ns.id);
+        put_u32(&p[4], (uint32_t)ns.type);
+        put_u32(&p[8], ns.flags);
+        put_u32(&p[12], bool_flag(ns.outB));
+        put_i32(&p[16], ns.outI);
+        put_f32(&p[20], ns.outF);
+        put_u32(&p[24], bool_flag(ns.forceEnabled));
+        put_u32(&p[28], bool_flag(ns.forceBool));
+        put_u32(&p[32], ns.forceLeftMs);
+        put_u32(&p[36], runtime_flags);
+    }
+
+    const uint16_t rsp_len = (uint16_t)(16u + ((uint16_t)nodes_in_chunk * 40u));
+
+    return plc_link_send_response(
+            PLC_LINK_RSP_NODES_SNAPSHOT,
+            seq,
+            rsp,
+            rsp_len
+    );
 }
 
 static bool send_node(uint16_t seq, const uint8_t* body, uint16_t body_len)
@@ -498,8 +881,28 @@ bool plc_link_ext_handle(PlcLinkCommand cmd,
             (void)send_status_ext(seq);
             return true;
 
+        case PLC_LINK_CMD_GET_STATUS_WEB_V2:
+            if (body_len != 0u) {
+                (void)plc_link_send_error_response(seq, PLC_LINK_ERR_BAD_SIZE, body_len);
+                return true;
+            }
+            (void)send_status_web_v2(seq);
+            return true;
+
+        case PLC_LINK_CMD_GET_IO_SUMMARY:
+            if (body_len != 0u) {
+                (void)plc_link_send_error_response(seq, PLC_LINK_ERR_BAD_SIZE, body_len);
+                return true;
+            }
+            (void)send_io_summary(seq);
+            return true;
+
         case PLC_LINK_CMD_GET_NODE:
             (void)send_node(seq, body, body_len);
+            return true;
+
+        case PLC_LINK_CMD_GET_NODES_SNAPSHOT:
+            (void)send_nodes_snapshot(seq, body, body_len);
             return true;
 
         case PLC_LINK_CMD_FORCE_OUTPUT:
