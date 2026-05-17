@@ -103,6 +103,11 @@ bool plc_upload_graph(const PlcGraph *src) {
 #endif
 
     g_stagingGraphValid = true;
+    plc_event_push(
+            PLC_EVENT_UPLOAD_OK,
+            (int16_t)g_stagingGraph.nodeCount,
+            (int16_t)g_stagingGraph.cycleMs
+    );
 //  g_needSwapGraph = true; // оставлено как в твоём коде (закомментировано)
     return true;
 }
@@ -171,6 +176,11 @@ bool plc_release_output(uint16_t nodeIndex)
     PLC_LOGT(PLC_LOG_TAG, "release_output: node[%u] OK", (unsigned)nodeIndex);
 #endif
 
+    plc_event_push(
+            PLC_EVENT_FORCE_OFF,
+            (int16_t)nodeIndex,
+            0
+    );
     return true;
 }
 
@@ -221,6 +231,11 @@ bool plc_force_output(uint16_t nodeIndex, bool value, uint32_t holdMs)
 #endif
 
 
+        plc_event_push(
+                PLC_EVENT_FORCE_ON,
+                (int16_t)nodeIndex,
+                value ? 1 : 0
+        );
         return true;
     } while (0);
 
