@@ -9,6 +9,7 @@
 #include "plc_platform.h"
 
 #include "friendly_plc/plc_safety.h"
+#include "friendly_plc/plc_snapshot.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -273,8 +274,35 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
 
         case PLC_LINK_CMD_ACTIVATE: {
             PlcGraphLoaderResult r = plc_graph_loader_activate();
+
             if (r != PLC_GRAPH_LOADER_OK) {
                 (void)send_error(seq, PLC_LINK_ERR_GRAPH_LOADER, (uint32_t)r);
+                break;
+            }
+
+            /*
+             * plc_graph_loader_activate() только ставит запрос на swap.
+             * Реальная замена active graph происходит в plc_tick().
+             * Поэтому ждём коротко, пока scan task реально активирует граф.
+             */
+            bool runtime_ok = false;
+            uint32_t start_ms = plc_platform_now_ms();
+
+            while ((plc_platform_now_ms() - start_ms) < 200u) {
+                PlcRuntimeSnapshot rs;
+                memset(&rs, 0, sizeof(rs));
+
+                if (plc_snapshot_get_runtime(&rs) &&
+                    rs.activeGraphValid &&
+                    rs.running &&
+                    !rs.safeOrFaulted) {
+                    runtime_ok = true;
+                    break;
+                }
+            }
+
+            if (!runtime_ok) {
+                (void)send_error(seq, PLC_LINK_ERR_GRAPH_LOADER, PLC_GRAPH_LOADER_ERR_APPLY_FAILED);
                 break;
             }
 

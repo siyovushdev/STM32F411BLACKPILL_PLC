@@ -231,13 +231,7 @@ bool plc_force_output(uint16_t nodeIndex, bool value, uint32_t holdMs)
 static void plc_apply_pending_cmds(PlcGraph* g, uint32_t dt_ms);
 
 void plc_tick(uint32_t nowMs)
-{
-    if (plc_is_safe_or_faulted()) {
-        plc_safety_apply_safe_outputs_once();
-        plc_port_feed_watchdog();
-        return;
-    }
-
+{ 
     uint32_t periodMs = 10;
     if (g_activeGraphValid && g_activeGraph.cycleMs > 0) {
         periodMs = g_activeGraph.cycleMs;
@@ -262,32 +256,49 @@ void plc_tick(uint32_t nowMs)
     // plc_eval_graph(dt);
 
     // 1) активация нового графа
+    // 1) активация нового графа
     if (g_needSwapGraph && g_stagingGraphValid) {
 
+        // Сначала снять старый SAFE/FAULT/STOP
+        (void)plc_ack_faults();
 
+        // Заменить runtime-граф
         g_activeGraph = g_stagingGraph;
         g_activeGraphValid = true;
+        g_stagingGraphValid = false;
         g_needSwapGraph = false;
+
+        // Сбросить runtime-состояния
         plc_graph_reset_runtime(&g_activeGraph);
         plc_io_reset_runtime();
-
-        plc_event_push(PLC_EVENT_ACTIVATE_OK,
-                       (int16_t)g_activeGraph.nodeCount,
-                       (int16_t)g_activeGraph.cycleMs);
-
         plc_mem_reset_all();
 
-        // СБРОС ВСЕХ ВЫХОДОВ
+        // Безопасно сбросить физические выходы
         plc_safety_apply_safe_outputs_always();
-        plc_ack_faults();
-        plc_request_run();
 
+        // Запустить PLC
+        if (!plc_request_run()) {
+            plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 2, 0);
+            return;
+        }
 
+        plc_event_push(
+                PLC_EVENT_ACTIVATE_OK,
+                (int16_t)g_activeGraph.nodeCount,
+                (int16_t)g_activeGraph.cycleMs
+        );
 
 #if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
-        PLC_LOGT(PLC_LOG_TAG, "activate: swapped (nodes=%u, cycleMs=%u)",
-             (unsigned) g_activeGraph.nodeCount, (unsigned) g_activeGraph.cycleMs);
+        PLC_LOGT(PLC_LOG_TAG, "activate: swapped and running (nodes=%u, cycleMs=%u)",
+                 (unsigned) g_activeGraph.nodeCount,
+                 (unsigned) g_activeGraph.cycleMs);
 #endif
+    }
+
+    if (plc_is_safe_or_faulted()) {
+        plc_safety_apply_safe_outputs_once();
+        plc_port_feed_watchdog();
+        return;
     }
 
     // 2) нет активного графа

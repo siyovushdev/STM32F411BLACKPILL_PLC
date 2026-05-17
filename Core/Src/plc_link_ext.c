@@ -324,8 +324,8 @@ static bool send_status_web_v2(uint16_t seq)
     put_u32(&body[44], (uint32_t)rs.runtimeLastFault);
 
     put_u32(&body[48], gs.active_version);
-    put_u32(&body[52], ps.active_size);
-    put_u32(&body[56], ps.active_crc32);
+    put_u32(&body[52], gs.upload_size);
+    put_u32(&body[56], gs.expected_crc32);
     put_u32(&body[60], gs.uploaded_bytes);
     put_u32(&body[64], gs.last_error);
 
@@ -515,7 +515,7 @@ static bool send_nodes_snapshot(uint16_t seq, const uint8_t* body, uint16_t body
         nodes_in_chunk = (remaining > nodes_per_chunk) ? nodes_per_chunk : remaining;
     }
 
-    uint8_t rsp[16u + (8u * 40u)];
+    uint8_t rsp[16u + (8u * 64u)];
     memset(rsp, 0, sizeof(rsp));
 
     put_u32(&rsp[0], 0x314E534Eu); /* 'NSN1' */
@@ -535,7 +535,7 @@ static bool send_nodes_snapshot(uint16_t seq, const uint8_t* body, uint16_t body
             continue;
         }
 
-        uint8_t* p = &rsp[16u + ((uint16_t)i * 40u)];
+        uint8_t* p = &rsp[16u + ((uint16_t)i * 64u)];
 
         uint32_t runtime_flags = 0u;
 
@@ -582,9 +582,15 @@ static bool send_nodes_snapshot(uint16_t seq, const uint8_t* body, uint16_t body
         put_u32(&p[28], bool_flag(ns.forceBool));
         put_u32(&p[32], ns.forceLeftMs);
         put_u32(&p[36], runtime_flags);
+        put_u32(&p[40], ns.tonAccumMs);
+        put_u32(&p[44], ns.toffLeftMs);
+        put_i32(&p[48], ns.acc);
+        put_u32(&p[52], bool_flag(ns.prevClk));
+        put_u32(&p[56], 0u);
+        put_u32(&p[60], 0u);
     }
 
-    const uint16_t rsp_len = (uint16_t)(16u + ((uint16_t)nodes_in_chunk * 40u));
+    const uint16_t rsp_len = (uint16_t)(16u + ((uint16_t)nodes_in_chunk * 64u));
 
     return plc_link_send_response(
             PLC_LINK_RSP_NODES_SNAPSHOT,
