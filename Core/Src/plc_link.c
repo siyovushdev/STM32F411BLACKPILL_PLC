@@ -10,6 +10,7 @@
 
 #include "friendly_plc/plc_safety.h"
 #include "friendly_plc/plc_snapshot.h"
+#include "friendly_plc/plc_event.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -19,6 +20,9 @@
 #define HDR_SIZE 4u
 #define U16_LE(p) ((uint16_t)((uint16_t)(p)[0] | ((uint16_t)(p)[1] << 8u)))
 #define U32_LE(p) ((uint32_t)((uint32_t)(p)[0] | ((uint32_t)(p)[1] << 8u) | ((uint32_t)(p)[2] << 16u) | ((uint32_t)(p)[3] << 24u)))
+#define LOGD_MARKER 0x3147444Cu /* 'LDG1' */
+#define LOGD_VERSION 1u
+#define LOGD_RECORD_SIZE 12u
 
 typedef struct {
     PlcLinkStatus status;
@@ -30,6 +34,11 @@ static void put_u16(uint8_t* p, uint16_t v)
 {
     p[0] = (uint8_t)(v & 0xFFu);
     p[1] = (uint8_t)((v >> 8u) & 0xFFu);
+}
+
+static void put_i16(uint8_t* p, int16_t v)
+{
+    put_u16(p, (uint16_t)v);
 }
 
 static void put_u32(uint8_t* p, uint32_t v)
@@ -181,6 +190,59 @@ static bool send_status(uint16_t seq)
     return send_packet(PLC_LINK_RSP_STATUS, seq, body, sizeof(body));
 }
 
+static bool send_log_dump(uint16_t seq, const uint8_t* body, uint16_t body_len)
+{
+    if (body == NULL || body_len != 4u) {
+        return send_error(seq, PLC_LINK_ERR_BAD_SIZE, body_len);
+    }
+
+    uint16_t from = U16_LE(&body[0]);
+    uint16_t count_req = U16_LE(&body[2]);
+
+    const uint16_t total = plc_event_count();
+    const uint16_t capacity = plc_event_capacity();
+    const uint16_t max_records = (uint16_t)((PLC_LINK_MAX_BODY_SIZE - 16u) / LOGD_RECORD_SIZE);
+
+    if (from > total) {
+        from = total;
+    }
+
+    uint16_t count = (uint16_t)(total - from);
+    if (count > count_req) {
+        count = count_req;
+    }
+    if (count > max_records) {
+        count = max_records;
+    }
+
+    uint8_t rsp[PLC_LINK_MAX_BODY_SIZE];
+    memset(rsp, 0, sizeof(rsp));
+
+    put_u32(&rsp[0], LOGD_MARKER);
+    put_u32(&rsp[4], LOGD_VERSION);
+    put_u16(&rsp[8], total);
+    put_u16(&rsp[10], from);
+    put_u16(&rsp[12], count);
+    put_u16(&rsp[14], capacity);
+
+    for (uint16_t i = 0u; i < count; i++) {
+        PlcEvent e;
+        memset(&e, 0, sizeof(e));
+        if (!plc_event_peek((uint16_t)(from + i), &e)) {
+            break;
+        }
+
+        uint8_t* p = &rsp[16u + ((uint16_t)i * LOGD_RECORD_SIZE)];
+        put_u32(&p[0], e.ts_ms);
+        put_u16(&p[4], e.code);
+        put_i16(&p[6], e.a);
+        put_i16(&p[8], e.b);
+        put_u16(&p[10], 0u);
+    }
+
+    return send_packet(PLC_LINK_RSP_LOG_DUMP, seq, rsp, (uint16_t)(16u + (count * LOGD_RECORD_SIZE)));
+}
+
 void plc_link_init(void)
 {
     memset(&s_link, 0, sizeof(s_link));
@@ -216,6 +278,10 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
 
         case PLC_LINK_CMD_GET_STATUS:
             (void)send_status(seq);
+            break;
+
+        case PLC_LINK_CMD_LOG_DUMP:
+            (void)send_log_dump(seq, body, body_len);
             break;
 
         case PLC_LINK_CMD_GET_STATUS_EXT:
@@ -280,11 +346,6 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
                 break;
             }
 
-            /*
-             * plc_graph_loader_activate() только ставит запрос на swap.
-             * Реальная замена active graph происходит в plc_tick().
-             * Поэтому ждём коротко, пока scan task реально активирует граф.
-             */
             bool runtime_ok = false;
             uint32_t start_ms = plc_platform_now_ms();
 
@@ -339,6 +400,7 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
                 (void)send_error(seq, PLC_LINK_ERR_SAFE_RESET_FAILED, (uint32_t)plc_get_state());
             }
             break;
+
         case PLC_LINK_CMD_FORCE_OUTPUT:
         case PLC_LINK_CMD_RELEASE_OUTPUT:
         case PLC_LINK_CMD_MEM_INFO:
