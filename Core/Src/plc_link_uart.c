@@ -261,7 +261,17 @@ void plc_link_uart_rx_task(void* argument)
     }
 
     for (;;) {
-        size_t n = xStreamBufferReceive(s_ctx.rx_stream, buf, sizeof(buf), pdMS_TO_TICKS(100u));
+        if (s_ctx.initialized && !s_ctx.rx_started) {
+            (void)plc_link_uart_recover_rx();
+        }
+
+        size_t n = xStreamBufferReceive(
+                s_ctx.rx_stream,
+                buf,
+                sizeof(buf),
+                pdMS_TO_TICKS(100u)
+        );
+
         for (size_t i = 0; i < n; i++) {
             rx_parser_feed(buf[i]);
         }
@@ -355,17 +365,14 @@ void plc_link_uart_hal_tx_cplt_callback(UART_HandleTypeDef* huart)
 
 void plc_link_uart_hal_error_callback(UART_HandleTypeDef* huart)
 {
-    if (!s_ctx.initialized || huart != s_ctx.huart) {
+    if (huart != s_ctx.huart) {
         return;
     }
 
     s_ctx.stats.uart_errors++;
-    plc_fault_note_protocol_error(PLC_FAULT_PROTOCOL_FRAME, PLC_LINK_UART_ERR_TIMEOUT);
-    (void)HAL_UART_AbortReceive(huart);
-    (void)HAL_UARTEx_ReceiveToIdle_DMA(s_ctx.huart, s_ctx.rx_dma_buf, sizeof(s_ctx.rx_dma_buf));
-    if (s_ctx.huart->hdmarx != NULL) {
-        __HAL_DMA_DISABLE_IT(s_ctx.huart->hdmarx, DMA_IT_HT);
-    }
+    s_ctx.rx_started = false;
+
+    (void)plc_link_uart_recover_rx();
 }
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef* huart, uint16_t Size)
@@ -381,4 +388,48 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
 void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart)
 {
     plc_link_uart_hal_error_callback(huart);
+}
+
+PlcLinkUartResult plc_link_uart_recover_rx(void)
+{
+    if (!s_ctx.initialized || s_ctx.huart == NULL) {
+        return PLC_LINK_UART_ERR_NOT_INITIALIZED;
+    }
+
+//    taskENTER_CRITICAL();
+
+    s_ctx.rx_started = false;
+
+    rx_parser_reset();
+
+    if (s_ctx.rx_stream != NULL) {
+        xStreamBufferReset(s_ctx.rx_stream);
+    }
+
+    if (s_ctx.huart->hdmarx != NULL) {
+        __HAL_DMA_DISABLE_IT(s_ctx.huart->hdmarx, DMA_IT_HT);
+    }
+
+    taskEXIT_CRITICAL();
+
+    (void)HAL_UART_AbortReceive(s_ctx.huart);
+    (void)HAL_UART_DMAStop(s_ctx.huart);
+
+    HAL_StatusTypeDef st = HAL_UARTEx_ReceiveToIdle_DMA(
+            s_ctx.huart,
+            s_ctx.rx_dma_buf,
+            sizeof(s_ctx.rx_dma_buf)
+    );
+
+    if (st != HAL_OK) {
+        s_ctx.stats.uart_errors++;
+        return PLC_LINK_UART_ERR_HAL;
+    }
+
+    if (s_ctx.huart->hdmarx != NULL) {
+        __HAL_DMA_DISABLE_IT(s_ctx.huart->hdmarx, DMA_IT_HT);
+    }
+
+    s_ctx.rx_started = true;
+    return PLC_LINK_UART_OK;
 }

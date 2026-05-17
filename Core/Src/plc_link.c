@@ -298,6 +298,11 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
             break;
         }
 
+        case PLC_LINK_CMD_UPLOAD_CANCEL:
+            plc_graph_loader_cancel();
+            (void)send_ack(seq, cmd);
+            break;
+
         case PLC_LINK_CMD_SAFE_RESET:
             if (plc_ack_faults()) {
                 (void)plc_request_run();

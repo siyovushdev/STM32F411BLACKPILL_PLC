@@ -266,3 +266,15 @@ uint32_t plc_graph_loader_get_active_image_crc32(void)
 {
     return s_loader.active_crc32;
 }
+
+void plc_graph_loader_cancel(void)
+{
+    s_loader.upload_active = false;
+    s_loader.image_ready = false;
+    s_loader.uploaded_bytes = 0u;
+    s_loader.total_size = 0u;
+    s_loader.expected_crc32 = 0u;
+    s_loader.last_error = PLC_GRAPH_LOADER_OK;
+
+    memset(s_loader.written_map, 0, sizeof(s_loader.written_map));
+}

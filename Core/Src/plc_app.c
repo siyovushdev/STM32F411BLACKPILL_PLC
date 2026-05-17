@@ -17,6 +17,29 @@
 
 #include <stdbool.h>
 
+extern uint32_t SystemCoreClock;
+
+static void perf_timer_init(void)
+{
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0u;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+static uint32_t perf_now_cycles(void)
+{
+    return DWT->CYCCNT;
+}
+
+static uint32_t perf_cycles_to_us(uint32_t cycles)
+{
+    if (SystemCoreClock == 0u) {
+        return 0u;
+    }
+
+    return (uint32_t)(((uint64_t)cycles * 1000000ull) / (uint64_t)SystemCoreClock);
+}
+
 extern UART_HandleTypeDef huart2;
 
 #ifndef PLC_APP_SCAN_PERIOD_MS
@@ -70,6 +93,7 @@ bool plc_app_init(void)
 
     plc_runtime_init();
     plc_diag_init();
+    perf_timer_init();
     plc_graph_loader_init();
     plc_persist_init();
 
@@ -159,9 +183,32 @@ static void plc_scan_task(void* argument)
     TickType_t last_wake = xTaskGetTickCount();
     const TickType_t period = pdMS_TO_TICKS(PLC_APP_SCAN_PERIOD_MS);
 
+    uint32_t last_cycle_start_cycles = perf_now_cycles();
+
     for (;;) {
+        uint32_t cycle_start_cycles = perf_now_cycles();
+
+        uint32_t work_start_cycles = perf_now_cycles();
         plc_platform_scan_cycle();
+        uint32_t work_end_cycles = perf_now_cycles();
+
         plc_platform_feed_watchdog();
+
+        uint32_t scan_end_cycles = perf_now_cycles();
+
+        uint32_t work_us = perf_cycles_to_us(work_end_cycles - work_start_cycles);
+        uint32_t scan_us = perf_cycles_to_us(scan_end_cycles - cycle_start_cycles);
+        uint32_t cycle_real_us = perf_cycles_to_us(cycle_start_cycles - last_cycle_start_cycles);
+
+        last_cycle_start_cycles = cycle_start_cycles;
+
+        plc_diag_note_scan_metrics(
+                scan_us,
+                work_us,
+                cycle_real_us,
+                PLC_APP_SCAN_PERIOD_MS
+        );
+
         vTaskDelayUntil(&last_wake, period);
     }
 }

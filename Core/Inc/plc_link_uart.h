@@ -16,11 +16,11 @@ extern "C" {
 #endif
 
 #ifndef PLC_LINK_UART_RX_DMA_BUFFER_SIZE
-#define PLC_LINK_UART_RX_DMA_BUFFER_SIZE 256u
+#define PLC_LINK_UART_RX_DMA_BUFFER_SIZE 2048u
 #endif
 
 #ifndef PLC_LINK_UART_RX_STREAM_SIZE
-#define PLC_LINK_UART_RX_STREAM_SIZE 2048u
+#define PLC_LINK_UART_RX_STREAM_SIZE 8192u
 #endif
 
 #ifndef PLC_LINK_UART_TX_MESSAGE_BUFFER_SIZE
@@ -69,6 +69,8 @@ void plc_link_uart_get_stats(PlcLinkUartStats* out_stats);
 void plc_link_uart_hal_rx_event_callback(UART_HandleTypeDef* huart, uint16_t size);
 void plc_link_uart_hal_tx_cplt_callback(UART_HandleTypeDef* huart);
 void plc_link_uart_hal_error_callback(UART_HandleTypeDef* huart);
+
+PlcLinkUartResult plc_link_uart_recover_rx(void);
 
 #ifdef __cplusplus
 }

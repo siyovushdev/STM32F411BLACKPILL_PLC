@@ -228,7 +228,7 @@ static bool send_status_web_v2(uint16_t seq)
     plc_persist_service_get_status(&pss);
     plc_diag_get_status(&ds);
 
-    uint8_t body[160];
+    uint8_t body[168];
     memset(body, 0, sizeof(body));
 
     uint32_t run_state = 0u;
@@ -296,8 +296,17 @@ static bool send_status_web_v2(uint16_t seq)
      * 120 u32 persist_active_crc32
      * 124 u32 persist_last_result
      *
-     * Reserved for next real fields:
-     * 128..159 reserved
+    * Performance:
+    * 128 u32 scan_avg_us
+    * 132 u32 scan_max_us
+    * 136 u32 work_avg_us
+    * 140 u32 work_max_us
+    * 144 u32 cycle_real_avg_us
+    * 148 u32 cycle_real_max_us
+    * 152 u32 scan_limit_ms
+    * 156 u32 cpu_load_x100
+    * 160 u32 scan_long_steps
+    * 164..167 reserved
      */
 
     put_u32(&body[0],  0x32424557u); /* 'WEB2' */
@@ -337,6 +346,15 @@ static bool send_status_web_v2(uint16_t seq)
     put_u32(&body[116], ps.active_size);
     put_u32(&body[120], ps.active_crc32);
     put_u32(&body[124], (uint32_t)ps.last_result);
+    put_u32(&body[128], ds.scan_avg_us);
+    put_u32(&body[132], ds.scan_max_us);
+    put_u32(&body[136], ds.work_avg_us);
+    put_u32(&body[140], ds.work_max_us);
+    put_u32(&body[144], ds.cycle_real_avg_us);
+    put_u32(&body[148], ds.cycle_real_max_us);
+    put_u32(&body[152], ds.scan_limit_ms);
+    put_u32(&body[156], ds.cpu_load_x100);
+    put_u32(&body[160], ds.scan_long_steps);
 
     return plc_link_send_response(
             PLC_LINK_RSP_STATUS_WEB_V2,

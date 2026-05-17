@@ -48,6 +48,8 @@ uint32_t plc_graph_loader_get_active_image_crc32(void);
  */
 bool plc_graph_loader_apply_image(const uint8_t* image, uint32_t size, uint32_t version);
 
+void plc_graph_loader_cancel(void);
+
 #ifdef __cplusplus
 }
 #endif

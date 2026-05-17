@@ -54,6 +54,16 @@ typedef struct {
     uint32_t diag_stack_free_words;
     uint32_t diag_stack_used_words;
     uint32_t diag_stack_size_words;
+
+    uint32_t scan_avg_us;
+    uint32_t scan_max_us;
+    uint32_t work_avg_us;
+    uint32_t work_max_us;
+    uint32_t cycle_real_avg_us;
+    uint32_t cycle_real_max_us;
+    uint32_t scan_limit_ms;
+    uint32_t cpu_load_x100;
+    uint32_t scan_long_steps;
 } PlcDiagStatus;
 
 void plc_diag_init(void);
@@ -74,6 +84,11 @@ void plc_diag_register_all_tasks(TaskHandle_t scan_task,
                                  uint32_t diag_stack_words);
 
 void plc_diag_get_status(PlcDiagStatus* out_status);
+
+void plc_diag_note_scan_metrics(uint32_t scan_us,
+                                uint32_t work_us,
+                                uint32_t cycle_real_us,
+                                uint32_t scan_limit_ms);
 
 #ifdef __cplusplus
 }
