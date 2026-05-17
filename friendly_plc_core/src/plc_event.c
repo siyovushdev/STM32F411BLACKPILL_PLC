@@ -46,7 +46,23 @@ bool plc_event_pop(PlcEvent* out)
     return true;
 }
 
+bool plc_event_peek(uint16_t index_from_oldest, PlcEvent* out)
+{
+    if (!out || index_from_oldest >= s_count) {
+        return false;
+    }
+
+    uint16_t idx = (uint16_t)((s_tail + index_from_oldest) % PLC_EVENT_CAPACITY);
+    *out = s_events[idx];
+    return true;
+}
+
 uint16_t plc_event_count(void)
 {
     return s_count;
+}
+
+uint16_t plc_event_capacity(void)
+{
+    return PLC_EVENT_CAPACITY;
 }

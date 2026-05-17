@@ -36,6 +36,14 @@ bool plc_event_push(PlcEventCode code, int16_t a, int16_t b);
 bool plc_event_pop(PlcEvent* out);
 uint16_t plc_event_count(void);
 
+/*
+ * Non-destructive dump API for diagnostics/HMI.
+ * index_from_oldest: 0 = oldest currently retained event.
+ * Returns false when index is outside retained range.
+ */
+bool plc_event_peek(uint16_t index_from_oldest, PlcEvent* out);
+uint16_t plc_event_capacity(void);
+
 #ifdef __cplusplus
 }
 #endif
