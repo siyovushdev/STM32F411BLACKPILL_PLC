@@ -40,12 +40,13 @@ PlcGraphLoaderResult plc_graph_loader_end(void);
 PlcGraphLoaderResult plc_graph_loader_activate(void);
 void plc_graph_loader_get_status(PlcGraphLoaderStatus* out_status);
 
+const uint8_t* plc_graph_loader_get_pending_image(void);
+uint32_t plc_graph_loader_get_pending_image_size(void);
+
 const uint8_t* plc_graph_loader_get_active_image(void);
 uint32_t plc_graph_loader_get_active_image_size(void);
 uint32_t plc_graph_loader_get_active_image_crc32(void);
-/* Strongly implement this function in your board/project code when friendly_plc_core
- * exposes the final graph image activation API. The weak default returns false.
- */
+
 bool plc_graph_loader_apply_image(const uint8_t* image, uint32_t size, uint32_t version);
 
 void plc_graph_loader_cancel(void);
