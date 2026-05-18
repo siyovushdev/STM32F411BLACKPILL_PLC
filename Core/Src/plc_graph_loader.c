@@ -291,6 +291,24 @@ bool plc_graph_loader_apply_image(const uint8_t* image, uint32_t size, uint32_t 
     return true;
 }
 
+const uint8_t* plc_graph_loader_get_pending_image(void)
+{
+    if (!s_loader.image_ready) {
+        return NULL;
+    }
+
+    return s_loader.image;
+}
+
+uint32_t plc_graph_loader_get_pending_image_size(void)
+{
+    if (!s_loader.image_ready) {
+        return 0u;
+    }
+
+    return s_loader.total_size;
+}
+
 const uint8_t* plc_graph_loader_get_active_image(void)
 {
     if (s_loader.active_size == 0u) {
@@ -308,4 +326,15 @@ uint32_t plc_graph_loader_get_active_image_size(void)
 uint32_t plc_graph_loader_get_active_image_crc32(void)
 {
     return s_loader.active_crc32;
+}
+
+void plc_graph_loader_cancel(void)
+{
+    s_loader.upload_active = false;
+    s_loader.image_ready = false;
+    s_loader.uploaded_bytes = 0u;
+    s_loader.total_size = 0u;
+    s_loader.expected_crc32 = 0u;
+    memset(s_loader.image, 0, sizeof(s_loader.image));
+    memset(s_loader.written_map, 0, sizeof(s_loader.written_map));
 }
