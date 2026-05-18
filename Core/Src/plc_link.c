@@ -12,6 +12,9 @@
 #include "friendly_plc/plc_snapshot.h"
 #include "friendly_plc/plc_event.h"
 
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -360,6 +363,8 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
                     runtime_ok = true;
                     break;
                 }
+
+                vTaskDelay(pdMS_TO_TICKS(1u));
             }
 
             if (!runtime_ok) {

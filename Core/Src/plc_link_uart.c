@@ -396,10 +396,9 @@ PlcLinkUartResult plc_link_uart_recover_rx(void)
         return PLC_LINK_UART_ERR_NOT_INITIALIZED;
     }
 
-//    taskENTER_CRITICAL();
+    taskENTER_CRITICAL();
 
     s_ctx.rx_started = false;
-
     rx_parser_reset();
 
     if (s_ctx.rx_stream != NULL) {

@@ -128,13 +128,7 @@ int main(void)
   MX_TIM5_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  if (!plc_app_init()) {
-    Error_Handler();
-  }
 
-  if (!plc_app_create_tasks()) {
-    Error_Handler();
-  }
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -158,10 +152,17 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of plcScanTask */
-  plcScanTaskHandle = osThreadNew(StartPlcScanTask, NULL, &plcScanTask_attributes);
+//  plcScanTaskHandle = osThreadNew(StartPlcScanTask, NULL, &plcScanTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
+  if (!plc_app_init()) {
+    Error_Handler();
+  }
+
+  if (!plc_app_create_tasks()) {
+    Error_Handler();
+  }
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
