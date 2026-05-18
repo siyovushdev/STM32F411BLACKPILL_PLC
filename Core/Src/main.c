@@ -152,7 +152,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of plcScanTask */
-//  plcScanTaskHandle = osThreadNew(StartPlcScanTask, NULL, &plcScanTask_attributes);
+  plcScanTaskHandle = osThreadNew(StartPlcScanTask, NULL, &plcScanTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -251,7 +251,7 @@ static void MX_IWDG_Init(void)
 
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_64;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_4;
   hiwdg.Init.Reload = 4095;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
   {
@@ -609,63 +609,25 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, DO0_Pin|DO1_Pin|DO2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, DAC_SYNC_Pin|MCP_DI_CS_Pin|MCP_DO_CS_Pin|ADC_CS_Pin
+                          |DAC_CLR_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(DO3_GPIO_Port, DO3_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, ADC_RST_Pin|DAC_LDAC_Pin|ADC_CONVST_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, DAC_SYNC_Pin|ADC_CS_Pin|DAC_CLR_Pin, GPIO_PIN_SET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, ADC_RST_Pin|DO4_Pin|DAC_LDAC_Pin|ADC_CONVST_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : DO0_Pin DO1_Pin DO2_Pin */
-  GPIO_InitStruct.Pin = DO0_Pin|DO1_Pin|DO2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : DO3_Pin */
-  GPIO_InitStruct.Pin = DO3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(DO3_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : DAC_SYNC_Pin ADC_RST_Pin DO4_Pin ADC_CS_Pin
-                           DAC_CLR_Pin DAC_LDAC_Pin ADC_CONVST_Pin */
-  GPIO_InitStruct.Pin = DAC_SYNC_Pin|ADC_RST_Pin|DO4_Pin|ADC_CS_Pin
-                          |DAC_CLR_Pin|DAC_LDAC_Pin|ADC_CONVST_Pin;
+  /*Configure GPIO pins : DAC_SYNC_Pin ADC_RST_Pin MCP_DI_CS_Pin MCP_DO_CS_Pin
+                           ADC_CS_Pin DAC_CLR_Pin DAC_LDAC_Pin ADC_CONVST_Pin */
+  GPIO_InitStruct.Pin = DAC_SYNC_Pin|ADC_RST_Pin|MCP_DI_CS_Pin|MCP_DO_CS_Pin
+                          |ADC_CS_Pin|DAC_CLR_Pin|DAC_LDAC_Pin|ADC_CONVST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : DI0_Pin */
-  GPIO_InitStruct.Pin = DI0_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(DI0_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : DI1_Pin DI4_Pin DI5_Pin */
-  GPIO_InitStruct.Pin = DI1_Pin|DI4_Pin|DI5_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : DI2_Pin DI3_Pin */
-  GPIO_InitStruct.Pin = DI2_Pin|DI3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : ADC_BUSY_Pin */
   GPIO_InitStruct.Pin = ADC_BUSY_Pin;

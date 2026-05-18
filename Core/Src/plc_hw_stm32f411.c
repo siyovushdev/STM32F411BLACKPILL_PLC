@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "plc_hw_spi.h"
 
 extern IWDG_HandleTypeDef hiwdg;
 extern SPI_HandleTypeDef hspi1;
@@ -35,22 +36,6 @@ typedef struct {
 #define PLC_AI_ENABLED 0
 #define PLC_AO_ENABLED 0
 
-static const PlcGpioInput s_di[] = {
-        { DI0_GPIO_Port, DI0_Pin, true  },
-        { DI1_GPIO_Port, DI1_Pin, false },
-        { DI2_GPIO_Port, DI2_Pin, false },
-        { DI3_GPIO_Port, DI3_Pin, false },
-        { DI4_GPIO_Port, DI4_Pin, false },
-        { DI5_GPIO_Port, DI5_Pin, false },
-};
-
-static const PlcGpioOutput s_do[] = {
-        { DO0_GPIO_Port, DO0_Pin, true  },
-        { DO1_GPIO_Port, DO1_Pin, false },
-        { DO2_GPIO_Port, DO2_Pin, false },
-        { DO3_GPIO_Port, DO3_Pin, false },
-        { DO4_GPIO_Port, DO4_Pin, false },
-};
 
 #if PLC_AI_ENABLED
 static AD7606_Handle s_ad7606 = {
@@ -81,20 +66,33 @@ static bool app_read_di(uint16_t ch, void* user)
 {
     (void)user;
 
-    if (ch >= ARRAY_LEN(s_di)) return false;
+    if (ch >= 16u) {
+        return false;
+    }
 
-    GPIO_PinState st = HAL_GPIO_ReadPin(s_di[ch].port, s_di[ch].pin);
-    bool value = (st == GPIO_PIN_SET);
+    uint16_t di_bits = 0;
+    if (!plc_hw_spi_read_di(&di_bits)) {
+        return false;
+    }
 
-    return s_di[ch].inverted ? !value : value;
+    return ((di_bits >> ch) & 0x0001u) != 0u;
 }
 
 static void board_write_do_raw(uint16_t ch, bool logical_value)
 {
-    if (ch >= ARRAY_LEN(s_do)) return;
+    static uint16_t do_bits = 0;
 
-    bool physical_value = s_do[ch].inverted ? !logical_value : logical_value;
-    HAL_GPIO_WritePin(s_do[ch].port, s_do[ch].pin, physical_value ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    if (ch >= 16u) {
+        return;
+    }
+
+    if (logical_value) {
+        do_bits |= (uint16_t)(1u << ch);
+    } else {
+        do_bits &= (uint16_t)~(1u << ch);
+    }
+
+    (void)plc_hw_spi_write_do(do_bits);
 }
 
 static void app_write_do(uint16_t ch, bool value, void* user)
@@ -192,9 +190,7 @@ static void app_set_safe_outputs(void* user)
 
 void plc_hw_stm32f411_reset_outputs(void)
 {
-    for (uint16_t i = 0; i < ARRAY_LEN(s_do); i++) {
-        board_write_do_raw(i, false);
-    }
+    (void)plc_hw_spi_write_do(0x0000u);
 
 #if PLC_AO_ENABLED
     (void)PlcAo_ResetAllToZeroVolt(&s_ao);
@@ -203,7 +199,7 @@ void plc_hw_stm32f411_reset_outputs(void)
 
 bool plc_hw_stm32f411_init(void)
 {
-    plc_hw_stm32f411_reset_outputs();
+//    plc_hw_stm32f411_reset_outputs();
 
 #if PLC_AI_ENABLED
     if (AD7606_Init(&s_ad7606) != HAL_OK) return false;
@@ -225,8 +221,8 @@ bool plc_hw_stm32f411_init(void)
 
     PlcPortStm32Config cfg = {
             .hw = {
-                    .di_count = ARRAY_LEN(s_di),
-                    .do_count = ARRAY_LEN(s_do),
+                    .di_count = 16,
+                    .do_count = 16,
                     .ai_count = PLC_AI_ENABLED ? PLC_AI_CH_COUNT : 0,
                     .ao_count = PLC_AO_ENABLED ? 8 : 0,
                     .hsc_count = 3,
