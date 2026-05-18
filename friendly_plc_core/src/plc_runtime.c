@@ -41,12 +41,10 @@ static void plc_node_reset_runtime(PlcNode *n) {
     n->force_bool = false;
     n->force_left_ms = 0;
 
-    // --- PID runtime ---
     n->pid_i = 0.0f;
     n->pid_prev_meas = 0.0f;
     n->pid_inited = false;
 
-    // --- Filter / Ramp runtime ---
     n->filt_prev = 0.0f;
     n->filt_inited = false;
 
@@ -55,7 +53,6 @@ static void plc_node_reset_runtime(PlcNode *n) {
 
     n->log_accum_ms = 0;
 
-    // CTU/CTD/CTUD
     n->acc = 0;
     n->prev_clk = false;
 
@@ -66,6 +63,52 @@ void plc_graph_reset_runtime(PlcGraph *g) {
     for (uint16_t i = 0; i < g->nodeCount; i++) {
         plc_node_reset_runtime(&g->nodes[i]);
     }
+}
+
+static bool plc_activate_staging_graph_now(void)
+{
+    if (!g_stagingGraphValid) {
+        plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 1, 0);
+#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
+        PLC_LOGT(PLC_LOG_TAG, "activate: staging invalid -> reject");
+#endif
+        return false;
+    }
+
+    (void)plc_ack_faults();
+
+    g_activeGraph = g_stagingGraph;
+    g_activeGraphValid = true;
+    g_stagingGraphValid = false;
+    g_needSwapGraph = false;
+
+    plc_graph_reset_runtime(&g_activeGraph);
+    plc_io_reset_runtime();
+    plc_mem_reset_all();
+    plc_safety_apply_safe_outputs_always();
+
+    if (!plc_request_run()) {
+        g_activeGraphValid = false;
+        plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 2, 0);
+#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
+        PLC_LOGT(PLC_LOG_TAG, "activate: request_run failed");
+#endif
+        return false;
+    }
+
+    plc_event_push(
+            PLC_EVENT_ACTIVATE_OK,
+            (int16_t)g_activeGraph.nodeCount,
+            (int16_t)g_activeGraph.cycleMs
+    );
+
+#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
+    PLC_LOGT(PLC_LOG_TAG, "activate: swapped and running (nodes=%u, cycleMs=%u)",
+             (unsigned)g_activeGraph.nodeCount,
+             (unsigned)g_activeGraph.cycleMs);
+#endif
+
+    return true;
 }
 
 bool plc_upload_graph(const PlcGraph *src) {
@@ -103,33 +146,18 @@ bool plc_upload_graph(const PlcGraph *src) {
 #endif
 
     g_stagingGraphValid = true;
+    g_needSwapGraph = false;
     plc_event_push(
             PLC_EVENT_UPLOAD_OK,
             (int16_t)g_stagingGraph.nodeCount,
             (int16_t)g_stagingGraph.cycleMs
     );
-//  g_needSwapGraph = true; // оставлено как в твоём коде (закомментировано)
     return true;
 }
 
 bool plc_request_activate_graph(void) {
-    if (!g_stagingGraphValid) {
-        plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 1, 0); // 1=staging invalid
-#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
-        PLC_LOGT(PLC_LOG_TAG, "activate: staging invalid -> reject");
-#endif
-        return false;
-    }
-    g_needSwapGraph = true; // TaskPlcScan обработает
-#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
-    PLC_LOGT(PLC_LOG_TAG, "activate: requested (will swap on next tick)");
-#endif
-
-//    plc_event_push(PLC_EVENT_ACTIVATE_OK, (int16_t)g_stagingGraph.nodeCount, (int16_t)g_stagingGraph.cycleMs);
-    return true;
+    return plc_activate_staging_graph_now();
 }
-
-
 
 bool plc_release_output(uint16_t nodeIndex)
 {
@@ -154,23 +182,18 @@ bool plc_release_output(uint16_t nodeIndex)
 
     PlcNode *n = &g_activeGraph.nodes[nodeIndex];
 
-    // Смысла нет снимать форс с не-выходных узлов, но и не ошибка
     if (n->type != PLC_NODE_DIGITAL_OUT &&
         n->type != PLC_NODE_AO) {
 #if PLC_LOG_ENABLED && PLC_LOG_CMDS
         PLC_LOGT(PLC_LOG_TAG, "release_output: node[%u] type=%u not DO/AO",
              (unsigned)nodeIndex, (unsigned)n->type);
 #endif
-        // можно вернуть true, чтобы на верхнем уровне не считалось ошибкой
         return true;
     }
-
 
     n->force_en      = false;
     n->flags        &= ~PLC_NODE_FLAG_FORCE;
     n->force_left_ms = 0;
-    // force_bool можно не трогать, он больше не используется
-
 
 #if PLC_LOG_ENABLED && PLC_LOG_CMDS
     PLC_LOGT(PLC_LOG_TAG, "release_output: node[%u] OK", (unsigned)nodeIndex);
@@ -184,14 +207,12 @@ bool plc_release_output(uint16_t nodeIndex)
     return true;
 }
 
-
 bool plc_force_output(uint16_t nodeIndex, bool value, uint32_t holdMs)
 {
 #if PLC_LOG_ENABLED && PLC_LOG_CMDS
     PLC_LOGT(PLC_LOG_TAG, "force_output: req node=%u val=%u holdMs=%u",
          (unsigned)nodeIndex, (unsigned)value, (unsigned)holdMs);
 #endif
-
 
     do {
         if (!g_activeGraphValid) {
@@ -230,7 +251,6 @@ bool plc_force_output(uint16_t nodeIndex, bool value, uint32_t holdMs)
              (unsigned)nodeIndex, (unsigned)n->force_bool, (unsigned)n->force_left_ms);
 #endif
 
-
         plc_event_push(
                 PLC_EVENT_FORCE_ON,
                 (int16_t)nodeIndex,
@@ -239,14 +259,13 @@ bool plc_force_output(uint16_t nodeIndex, bool value, uint32_t holdMs)
         return true;
     } while (0);
 
-
     return false;
 }
 
 static void plc_apply_pending_cmds(PlcGraph* g, uint32_t dt_ms);
 
 void plc_tick(uint32_t nowMs)
-{ 
+{
     uint32_t periodMs = 10;
     if (g_activeGraphValid && g_activeGraph.cycleMs > 0) {
         periodMs = g_activeGraph.cycleMs;
@@ -254,60 +273,18 @@ void plc_tick(uint32_t nowMs)
 
     uint32_t dt;
     if (s_lastNowMs == 0) {
-        dt = periodMs;                 // первый цикл
+        dt = periodMs;
     } else {
-        dt = nowMs - s_lastNowMs;      // реальное время
+        dt = nowMs - s_lastNowMs;
     }
     s_lastNowMs = nowMs;
 
-    // clamp, чтобы не “взорвать” PID/таймеры после паузы
-    // (например, после дебага/стопа/высоких приоритетов)
-    const uint32_t DT_MAX = periodMs * 4u;   // типично 2..10 периодов
+    const uint32_t DT_MAX = periodMs * 4u;
     if (dt > DT_MAX) dt = DT_MAX;
-    if (dt == 0) dt = 1;                     // защита от 0
+    if (dt == 0) dt = 1;
 
-    // дальше все таймеры/пиды используют dt (а не periodMs)
-    // plc_refresh_inputs_hw(nowMs, dt);
-    // plc_eval_graph(dt);
-
-    // 1) активация нового графа
-    // 1) активация нового графа
     if (g_needSwapGraph && g_stagingGraphValid) {
-
-        // Сначала снять старый SAFE/FAULT/STOP
-        (void)plc_ack_faults();
-
-        // Заменить runtime-граф
-        g_activeGraph = g_stagingGraph;
-        g_activeGraphValid = true;
-        g_stagingGraphValid = false;
-        g_needSwapGraph = false;
-
-        // Сбросить runtime-состояния
-        plc_graph_reset_runtime(&g_activeGraph);
-        plc_io_reset_runtime();
-        plc_mem_reset_all();
-
-        // Безопасно сбросить физические выходы
-        plc_safety_apply_safe_outputs_always();
-
-        // Запустить PLC
-        if (!plc_request_run()) {
-            plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 2, 0);
-            return;
-        }
-
-        plc_event_push(
-                PLC_EVENT_ACTIVATE_OK,
-                (int16_t)g_activeGraph.nodeCount,
-                (int16_t)g_activeGraph.cycleMs
-        );
-
-#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
-        PLC_LOGT(PLC_LOG_TAG, "activate: swapped and running (nodes=%u, cycleMs=%u)",
-                 (unsigned) g_activeGraph.nodeCount,
-                 (unsigned) g_activeGraph.cycleMs);
-#endif
+        (void)plc_activate_staging_graph_now();
     }
 
     if (plc_is_safe_or_faulted()) {
@@ -316,7 +293,6 @@ void plc_tick(uint32_t nowMs)
         return;
     }
 
-    // 2) нет активного графа
     if (!g_activeGraphValid) {
 #if PLC_LOG_ENABLED && PLC_LOG_TICK
         uint32_t tnow = nowMs;
@@ -329,7 +305,6 @@ void plc_tick(uint32_t nowMs)
         return;
     }
 
-    // 3) dt мониторинг
 #if PLC_LOG_ENABLED && PLC_LOG_TICK
     if (dt > PLC_TICK_DT_WARN_MS) {
         PLC_LOGT(PLC_LOG_TAG, "tick: dt=%u ms (WARN)", (unsigned) dt);
@@ -343,15 +318,12 @@ void plc_tick(uint32_t nowMs)
     }
 #endif
 
-    // AI update is handled by platform layer if needed
-
     if (!plc_is_running()) {
         plc_safety_apply_safe_outputs_once();
         plc_port_feed_watchdog();
         return;
     }
 
-    // 4) цикл ПЛК
     uint32_t execStartMs = plc_port_now_ms();
 
     plc_refresh_inputs_hw(nowMs, &g_activeGraph);
@@ -376,7 +348,6 @@ void plc_tick(uint32_t nowMs)
         plc_fault_note_scan_ok();
     }
 
-    // 5) watchdog
     plc_port_feed_watchdog();
 }
 
@@ -386,8 +357,6 @@ static void plc_apply_pending_cmds(PlcGraph *g, uint32_t dt_ms)
         PlcNode *n = &g->nodes[i];
 
         if (n->force_en && (n->flags & PLC_NODE_FLAG_FORCE)) {
-
-            // 0 = бесконечный форс, таймер не считаем вообще
             if (n->force_left_ms == 0) {
                 continue;
             }
