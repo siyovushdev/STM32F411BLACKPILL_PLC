@@ -11,6 +11,7 @@
 #include "friendly_plc/plc_safety.h"
 #include "friendly_plc/plc_snapshot.h"
 #include "friendly_plc/plc_event.h"
+#include "friendly_plc/plc_types.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
@@ -246,6 +247,28 @@ static bool send_log_dump(uint16_t seq, const uint8_t* body, uint16_t body_len)
     return send_packet(PLC_LINK_RSP_LOG_DUMP, seq, rsp, (uint16_t)(16u + (count * LOGD_RECORD_SIZE)));
 }
 
+static bool wait_for_runtime_graph(uint16_t expected_node_count, uint32_t timeout_ms)
+{
+    const uint32_t start_ms = plc_platform_now_ms();
+
+    while ((plc_platform_now_ms() - start_ms) < timeout_ms) {
+        PlcRuntimeSnapshot rs;
+        memset(&rs, 0, sizeof(rs));
+
+        if (plc_snapshot_get_runtime(&rs) &&
+            rs.activeGraphValid &&
+            rs.running &&
+            !rs.safeOrFaulted &&
+            rs.nodeCount == expected_node_count) {
+            return true;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1u));
+    }
+
+    return false;
+}
+
 void plc_link_init(void)
 {
     memset(&s_link, 0, sizeof(s_link));
@@ -342,6 +365,15 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
         }
 
         case PLC_LINK_CMD_ACTIVATE: {
+            const uint8_t* pending_image = plc_graph_loader_get_pending_image();
+            uint32_t pending_size = plc_graph_loader_get_pending_image_size();
+            uint16_t expected_node_count = 0u;
+
+            if (pending_image != NULL && pending_size == sizeof(PlcGraph)) {
+                const PlcGraph* pending_graph = (const PlcGraph*)pending_image;
+                expected_node_count = pending_graph->nodeCount;
+            }
+
             PlcGraphLoaderResult r = plc_graph_loader_activate();
 
             if (r != PLC_GRAPH_LOADER_OK) {
@@ -349,25 +381,7 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
                 break;
             }
 
-            bool runtime_ok = false;
-            uint32_t start_ms = plc_platform_now_ms();
-
-            while ((plc_platform_now_ms() - start_ms) < 200u) {
-                PlcRuntimeSnapshot rs;
-                memset(&rs, 0, sizeof(rs));
-
-                if (plc_snapshot_get_runtime(&rs) &&
-                    rs.activeGraphValid &&
-                    rs.running &&
-                    !rs.safeOrFaulted) {
-                    runtime_ok = true;
-                    break;
-                }
-
-                vTaskDelay(pdMS_TO_TICKS(1u));
-            }
-
-            if (!runtime_ok) {
+            if (expected_node_count == 0u || !wait_for_runtime_graph(expected_node_count, 500u)) {
                 (void)send_error(seq, PLC_LINK_ERR_GRAPH_LOADER, PLC_GRAPH_LOADER_ERR_APPLY_FAILED);
                 break;
             }
