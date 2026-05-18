@@ -2,6 +2,7 @@
 #include "friendly_plc/plc.h"
 #include "friendly_plc/plc_types.h"
 #include "friendly_plc/plc_safety.h"
+#include "friendly_plc/plc_log.h"
 #include <string.h>
 
 
@@ -69,6 +70,41 @@ static bool is_all_written(uint32_t len)
         }
     }
     return true;
+}
+
+static void log_graph_param_diag(const char* stage, const PlcGraph* graph)
+{
+#if PLC_LOG_ENABLED
+    if (graph == NULL) {
+        PLC_LOGT(PLC_LOG_TAG, "%s: graph=NULL", stage);
+        return;
+    }
+
+    PLC_LOGT(PLC_LOG_TAG,
+             "%s: graph=%p cycleMs=%lu nodeCount=%u sizeof(PlcGraph)=%u sizeof(PlcNode)=%u",
+             stage,
+             (const void*)graph,
+             (unsigned long)graph->cycleMs,
+             (unsigned)graph->nodeCount,
+             (unsigned)sizeof(PlcGraph),
+             (unsigned)sizeof(PlcNode));
+
+    const uint16_t count = graph->nodeCount < 8u ? graph->nodeCount : 8u;
+    for (uint16_t i = 0u; i < count; i++) {
+        const PlcNode* n = &graph->nodes[i];
+        PLC_LOGT(PLC_LOG_TAG,
+                 "%s: node[%u] id=%u type=%u inA=%d inB=%d paramInt=%ld paramMs=%lu flags=0x%08lX",
+                 stage,
+                 (unsigned)i,
+                 (unsigned)n->id,
+                 (unsigned)n->type,
+                 (int)n->inA,
+                 (int)n->inB,
+                 (long)n->paramInt,
+                 (unsigned long)n->paramMs,
+                 (unsigned long)n->flags);
+    }
+#endif
 }
 
 void plc_graph_loader_init(void)
@@ -228,10 +264,17 @@ bool plc_graph_loader_apply_image(const uint8_t* image, uint32_t size, uint32_t 
     }
 
     if (size != sizeof(PlcGraph)) {
+#if PLC_LOG_ENABLED
+        PLC_LOGT(PLC_LOG_TAG,
+                 "graph_loader: bad image size=%lu expected=%u",
+                 (unsigned long)size,
+                 (unsigned)sizeof(PlcGraph));
+#endif
         return false;
     }
 
     const PlcGraph* graph = (const PlcGraph*)image;
+    log_graph_param_diag("graph_loader_apply_image", graph);
 
     if (!plc_validate_graph(graph)) {
         return false;
@@ -265,16 +308,4 @@ uint32_t plc_graph_loader_get_active_image_size(void)
 uint32_t plc_graph_loader_get_active_image_crc32(void)
 {
     return s_loader.active_crc32;
-}
-
-void plc_graph_loader_cancel(void)
-{
-    s_loader.upload_active = false;
-    s_loader.image_ready = false;
-    s_loader.uploaded_bytes = 0u;
-    s_loader.total_size = 0u;
-    s_loader.expected_crc32 = 0u;
-    s_loader.last_error = PLC_GRAPH_LOADER_OK;
-
-    memset(s_loader.written_map, 0, sizeof(s_loader.written_map));
 }
