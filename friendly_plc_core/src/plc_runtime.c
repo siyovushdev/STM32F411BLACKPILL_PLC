@@ -78,6 +78,22 @@ static bool plc_activate_staging_graph_now(void)
     (void)plc_ack_faults();
 
     g_activeGraph = g_stagingGraph;
+    PLC_LOGI("PLC_RUNTIME",
+             "ACTIVE graph nodes=%u cycleMs=%u",
+             (unsigned)g_activeGraph.nodeCount,
+             (unsigned)g_activeGraph.cycleMs);
+
+    for (uint16_t i = 0; i < g_activeGraph.nodeCount; i++) {
+        PlcNode* n = &g_activeGraph.nodes[i];
+
+        PLC_LOGI("PLC_RUNTIME",
+                 "ACTIVE NODE[%u] id=%u type=%u paramInt=%ld paramMs=%lu",
+                 (unsigned)i,
+                 (unsigned)n->id,
+                 (unsigned)n->type,
+                 (long)n->paramInt,
+                 (unsigned long)n->paramMs);
+    }
     g_activeGraphValid = true;
     g_stagingGraphValid = false;
     g_needSwapGraph = false;

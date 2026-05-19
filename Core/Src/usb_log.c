@@ -19,7 +19,7 @@
 #endif
 
 #ifndef USB_LOG_TX_CHUNK_SIZE
-#define USB_LOG_TX_CHUNK_SIZE 128u
+#define USB_LOG_TX_CHUNK_SIZE 256u
 #endif
 
 #ifndef USB_LOG_TASK_STACK_WORDS
@@ -31,7 +31,7 @@
 #endif
 
 #ifndef USB_LOG_TX_BUSY_TIMEOUT_MS
-#define USB_LOG_TX_BUSY_TIMEOUT_MS 20u
+#define USB_LOG_TX_BUSY_TIMEOUT_MS 100u
 #endif
 
 #define USB_LOG_NOTIFY_VALUE 0x01u
@@ -137,7 +137,7 @@ static void UsbLog_Task(void* argument)
             const TickType_t start = xTaskGetTickCount();
 
             while (CDC_Transmit_FS(chunk, (uint16_t)len) == USBD_BUSY) {
-                vTaskDelay(pdMS_TO_TICKS(1u));
+                vTaskDelay(pdMS_TO_TICKS(2u));
 
                 if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(USB_LOG_TX_BUSY_TIMEOUT_MS)) {
                     break;

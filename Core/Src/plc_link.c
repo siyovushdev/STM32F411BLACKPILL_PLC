@@ -15,6 +15,7 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "friendly_plc/plc_log.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -356,6 +357,31 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
 
         case PLC_LINK_CMD_UPLOAD_END: {
             PlcGraphLoaderResult r = plc_graph_loader_end();
+            const uint8_t* img = plc_graph_loader_get_pending_image();
+            uint32_t sz = plc_graph_loader_get_pending_image_size();
+
+            if (img && sz == sizeof(PlcGraph)) {
+                const PlcGraph* g = (const PlcGraph*)img;
+
+                PLC_LOGI("PLC_LINK",
+                         "UPLOAD_END graph: nodes=%u cycleMs=%u",
+                         (unsigned)g->nodeCount,
+                         (unsigned)g->cycleMs);
+
+                for (uint16_t i = 0; i < g->nodeCount; i++) {
+                    const PlcNode* n = &g->nodes[i];
+
+                    PLC_LOGI("PLC_LINK",
+                             "NODE[%u] id=%u type=%u inA=%d inB=%d paramInt=%ld paramMs=%lu",
+                             (unsigned)i,
+                             (unsigned)n->id,
+                             (unsigned)n->type,
+                             (int)n->inA,
+                             (int)n->inB,
+                             (long)n->paramInt,
+                             (unsigned long)n->paramMs);
+                }
+            }
             if (r == PLC_GRAPH_LOADER_OK) {
                 (void)send_ack(seq, cmd);
             } else {
