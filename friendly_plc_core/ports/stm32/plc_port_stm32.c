@@ -1,4 +1,5 @@
 #include "plc_port_stm32.h"
+#include "friendly_plc/plc_log.h"
 
 #include <string.h>
 
@@ -35,20 +36,38 @@ PlcPortHwInfo plc_port_get_hw_info(void)
 
 bool plc_port_read_di(uint16_t ch)
 {
-    if (!s_inited || !s_cfg.read_di || ch >= s_cfg.hw.di_count) {
-        return false;
-    }
+//    PLC_LOGI("STM32_PORT", "read_di ch=%u", (unsigned)ch);
+//    if (!s_inited || !s_cfg.read_di || ch >= s_cfg.hw.di_count) {
+//        return false;
+//    }
 
     return s_cfg.read_di(ch, s_cfg.user);
 }
 
-void plc_port_write_do(uint16_t ch, bool value)
+void plc_port_write_do(uint16_t channel, bool value)
 {
-    if (!s_inited || !s_cfg.write_do || ch >= s_cfg.hw.do_count) {
+    static uint8_t inited[64];
+    static uint8_t last[64];
+
+    if (channel < 64) {
+        if (!inited[channel] || last[channel] != (uint8_t)value) {
+            inited[channel] = 1;
+            last[channel] = (uint8_t)value;
+
+            PLC_LOGI("STM32_PORT",
+                     "write_do ch=%u value=%u",
+                     (unsigned)channel,
+                     (unsigned)value);
+        }
+    }
+//    PLC_LOGI("STM32_PORT", "write_do ch=%u value=%u",
+//             (unsigned)ch,
+//             (unsigned)value);
+    if (!s_inited || !s_cfg.write_do || channel >= s_cfg.hw.do_count) {
         return;
     }
 
-    s_cfg.write_do(ch, value, s_cfg.user);
+    s_cfg.write_do(channel, value, s_cfg.user);
 }
 
 int32_t plc_port_read_ai_mv(uint16_t ch)

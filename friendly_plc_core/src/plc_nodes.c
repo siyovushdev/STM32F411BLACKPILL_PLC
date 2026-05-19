@@ -79,6 +79,12 @@ void plc_refresh_inputs_hw(uint32_t nowMs, PlcGraph *g) {
                 const uint32_t tnow = nowMs;
 
                 int ch = n->paramInt;
+//                PLC_LOGI("PLC_DI",
+//                         "DI node=%u id=%u paramInt=%ld ch=%d",
+//                         (unsigned)i,
+//                         (unsigned)n->id,
+//                         (long)n->paramInt,
+//                         ch);
                 if (ch < 0 || ch >= (int)(sizeof(di_filter)/sizeof(di_filter[0]))) {
 #if PLC_LOG_ENABLED
                     PLC_LOGW(PLC_LOG_TAG, "DI node %u invalid channel=%d", (unsigned)i, ch);

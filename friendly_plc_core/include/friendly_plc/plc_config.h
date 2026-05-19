@@ -92,7 +92,7 @@
 #endif
 
 #ifndef PLC_LOG_DI
-#define PLC_LOG_DI 0
+#define PLC_LOG_DI 1
 #endif
 
 #ifndef PLC_LOG_AI

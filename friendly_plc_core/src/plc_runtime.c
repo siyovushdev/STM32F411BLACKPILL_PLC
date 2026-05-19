@@ -156,10 +156,15 @@ bool plc_upload_graph(const PlcGraph *src) {
          (unsigned) g_stagingGraph.cycleMs);
 #endif
 
-    plc_graph_reset_runtime(&g_stagingGraph);
 #if PLC_LOG_ENABLED && PLC_LOG_UPLOAD
-    PLC_LOGT(PLC_LOG_TAG, "upload: runtime reset done");
+    PLC_LOGT(PLC_LOG_TAG,
+             "upload: graph valid (nodes=%u, cycleMs=%u)",
+             (unsigned) g_stagingGraph.nodeCount,
+             (unsigned) g_stagingGraph.cycleMs);
 #endif
+
+    g_stagingGraphValid = true;
+    g_needSwapGraph = false;
 
     g_stagingGraphValid = true;
     g_needSwapGraph = false;

@@ -191,8 +191,24 @@ PlcGraphLoaderResult plc_graph_loader_end(void)
         return PLC_GRAPH_LOADER_ERR_SIZE;
     }
 
+    PLC_LOGI("GRAPH_LOADER",
+             "upload_end: uploaded=%lu total=%lu expected_crc=0x%08lX",
+             (unsigned long)s_loader.uploaded_bytes,
+             (unsigned long)s_loader.total_size,
+             (unsigned long)s_loader.expected_crc32);
+
     uint32_t crc = crc32_calc(s_loader.image, s_loader.total_size);
+
+    PLC_LOGI("GRAPH_LOADER",
+             "upload_end: calculated_crc=0x%08lX",
+             (unsigned long)crc);
+
     if (crc != s_loader.expected_crc32) {
+        PLC_LOGE("GRAPH_LOADER",
+                 "upload_end failed: CRC mismatch calc=0x%08lX expected=0x%08lX",
+                 (unsigned long)crc,
+                 (unsigned long)s_loader.expected_crc32);
+
         s_loader.upload_active = false;
         s_loader.image_ready = false;
         s_loader.last_error = PLC_GRAPH_LOADER_ERR_CRC;
@@ -209,6 +225,9 @@ PlcGraphLoaderResult plc_graph_loader_end(void)
     s_loader.upload_active = false;
     s_loader.image_ready = true;
     s_loader.last_error = PLC_GRAPH_LOADER_OK;
+
+    PLC_LOGI("GRAPH_LOADER", "upload_end OK: image_ready=1");
+
     return PLC_GRAPH_LOADER_OK;
 }
 
@@ -257,36 +276,53 @@ void plc_graph_loader_get_status(PlcGraphLoaderStatus* out_status)
 
 bool plc_graph_loader_apply_image(const uint8_t* image, uint32_t size, uint32_t version)
 {
-    (void)version;
+    PLC_LOGI("GRAPH_LOADER",
+             "apply_image start: image=%p size=%lu expected=%u version=%lu",
+             image,
+             (unsigned long)size,
+             (unsigned)sizeof(PlcGraph),
+             (unsigned long)version);
 
     if (image == NULL) {
+        PLC_LOGE("GRAPH_LOADER", "apply_image failed: image=NULL");
         return false;
     }
 
     if (size != sizeof(PlcGraph)) {
-#if PLC_LOG_ENABLED
-        PLC_LOGT(PLC_LOG_TAG,
-                 "graph_loader: bad image size=%lu expected=%u",
+        PLC_LOGE("GRAPH_LOADER",
+                 "apply_image failed: bad size=%lu expected=%u",
                  (unsigned long)size,
                  (unsigned)sizeof(PlcGraph));
-#endif
         return false;
     }
 
     const PlcGraph* graph = (const PlcGraph*)image;
-    log_graph_param_diag("graph_loader_apply_image", graph);
+
+    PLC_LOGI("GRAPH_LOADER",
+             "graph header: nodeCount=%u cycleMs=%lu",
+             (unsigned)graph->nodeCount,
+             (unsigned long)graph->cycleMs);
 
     if (!plc_validate_graph(graph)) {
+        PLC_LOGE("GRAPH_LOADER", "apply_image failed: plc_validate_graph()");
         return false;
     }
+
+    PLC_LOGI("GRAPH_LOADER", "validate OK");
 
     if (!plc_upload_graph(graph)) {
+        PLC_LOGE("GRAPH_LOADER", "apply_image failed: plc_upload_graph()");
         return false;
     }
 
+    PLC_LOGI("GRAPH_LOADER", "upload_graph OK");
+
     if (!plc_request_activate_graph()) {
+        PLC_LOGE("GRAPH_LOADER", "apply_image failed: plc_request_activate_graph()");
         return false;
     }
+
+    PLC_LOGI("GRAPH_LOADER", "request_activate_graph OK");
 
     return true;
 }

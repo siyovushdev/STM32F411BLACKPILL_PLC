@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <string.h>
 #include "friendly_plc/plc_safety.h"
+#include "friendly_plc/plc_log.h"
+#include "plc_platform.h"
 
 #define PLC_PERSIST_MAGIC       0x46504C43UL /* 'FPLC' */
 #define PLC_PERSIST_FORMAT_VER  1u
@@ -186,6 +188,10 @@ static PlcPersistResult flash_erase_slot(uint8_t slot)
         return PLC_PERSIST_ERR_ARG;
     }
 
+    plc_platform_feed_watchdog();
+
+    PLC_LOGI("PERSIST", "erase start: slot=%u", (unsigned)slot);
+
     HAL_FLASH_Unlock();
     flash_clear_flags();
 
@@ -200,6 +206,8 @@ static PlcPersistResult flash_erase_slot(uint8_t slot)
     HAL_StatusTypeDef st = HAL_FLASHEx_Erase(&erase, &sector_error);
 
     HAL_FLASH_Lock();
+
+    plc_platform_feed_watchdog();
 
     if (st != HAL_OK || sector_error != 0xFFFFFFFFu) {
         return PLC_PERSIST_ERR_ERASE;
@@ -265,6 +273,14 @@ PlcPersistResult plc_persist_save_image(const uint8_t* image, uint32_t size, uin
     const uint32_t sequence = s_persist.has_valid_image ? (s_persist.active_sequence + 1u) : 1u;
     const uint32_t base = slot_base(target_slot);
 
+    PLC_LOGI("PERSIST",
+             "save start: size=%lu version=%lu target_slot=%u base=0x%08lX seq=%lu",
+             (unsigned long)size,
+             (unsigned long)version,
+             (unsigned)target_slot,
+             (unsigned long)base,
+             (unsigned long)sequence);
+
     PlcPersistHeader hdr;
     memset(&hdr, 0xFF, sizeof(hdr));
     hdr.magic = PLC_PERSIST_MAGIC;
@@ -280,29 +296,37 @@ PlcPersistResult plc_persist_save_image(const uint8_t* image, uint32_t size, uin
 
     PlcPersistResult r = flash_erase_slot(target_slot);
     if (r != PLC_PERSIST_OK) {
+        PLC_LOGE("PERSIST", "erase failed r=%d", (int)r);
         s_persist.last_result = r;
         return r;
     }
+    PLC_LOGI("PERSIST", "erase slot OK");
 
     r = flash_program(base + PLC_PERSIST_HDR_SIZE, image, size);
     if (r != PLC_PERSIST_OK) {
+        PLC_LOGE("PERSIST", "program image failed r=%d", (int)r);
         s_persist.last_result = r;
         return r;
     }
+    PLC_LOGI("PERSIST", "program image OK");
 
     r = flash_program(base, (const uint8_t*)&hdr, sizeof(hdr));
     if (r != PLC_PERSIST_OK) {
+        PLC_LOGE("PERSIST", "program header failed r=%d", (int)r);
         s_persist.last_result = r;
         return r;
     }
+    PLC_LOGI("PERSIST", "program header OK");
 
     if (!slot_valid(target_slot, NULL)) {
+        PLC_LOGE("PERSIST", "slot verify failed");
         s_persist.last_result = PLC_PERSIST_ERR_VERIFY;
 
         plc_fault_note_persist_corrupt(PLC_PERSIST_ERR_VERIFY);
 
         return s_persist.last_result;
     }
+    PLC_LOGI("PERSIST", "slot verify OK");
 
     refresh_status();
     s_persist.last_result = PLC_PERSIST_OK;

@@ -408,6 +408,22 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
             }
 
             if (expected_node_count == 0u || !wait_for_runtime_graph(expected_node_count, 500u)) {
+                PlcRuntimeSnapshot rs;
+                memset(&rs, 0, sizeof(rs));
+
+                bool snap_ok = plc_snapshot_get_runtime(&rs);
+
+                PLC_LOGE("PLC_LINK",
+                         "ACTIVATE failed after apply: expected_nodes=%u snap_ok=%u activeValid=%u running=%u safeOrFaulted=%u nodeCount=%u faultCounter=%lu runtimeLastFault=%u",
+                         (unsigned)expected_node_count,
+                         (unsigned)snap_ok,
+                         (unsigned)rs.activeGraphValid,
+                         (unsigned)rs.running,
+                         (unsigned)rs.safeOrFaulted,
+                         (unsigned)rs.nodeCount,
+                         (unsigned long)rs.faultCounter,
+                         (unsigned)rs.runtimeLastFault);
+
                 (void)send_error(seq, PLC_LINK_ERR_GRAPH_LOADER, PLC_GRAPH_LOADER_ERR_APPLY_FAILED);
                 break;
             }
@@ -424,9 +440,12 @@ void plc_link_on_frame(const uint8_t* payload, uint16_t payload_len, void* user)
             }
 
             if (!plc_persist_service_request_save(image, size, status.active_version)) {
+                PLC_LOGE("PLC_LINK", "persist request failed: busy");
                 (void)send_error(seq, PLC_LINK_ERR_PERSIST_BUSY, 0u);
                 break;
             }
+
+            PLC_LOGI("PLC_LINK", "persist save requested");
 
             (void)send_ack(seq, cmd);
             break;

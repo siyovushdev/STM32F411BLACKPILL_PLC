@@ -119,11 +119,18 @@ bool plc_app_init(void)
 
     PlcPersistResult load_result = plc_persist_load_active();
 
+    PLC_LOGI("APP",
+             "persist load result=%d",
+             (int)load_result);
+
     if (load_result == PLC_PERSIST_OK) {
+        PLC_LOGI("APP", "persist OK -> request RUN");
         (void)plc_request_run();
     } else if (load_result == PLC_PERSIST_ERR_EMPTY) {
+        PLC_LOGW("APP", "persist EMPTY -> request STOP");
         plc_request_stop();
     } else {
+        PLC_LOGE("APP", "persist CORRUPT result=%d", (int)load_result);
         plc_fault_note_persist_corrupt((int32_t)load_result);
     }
 
