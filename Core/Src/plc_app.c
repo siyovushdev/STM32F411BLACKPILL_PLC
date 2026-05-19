@@ -15,6 +15,9 @@
 #include "friendly_plc/plc_runtime.h"
 #include "friendly_plc/plc_safety.h"
 
+#include "usb_log.h"
+#include "friendly_plc/plc_log.h"
+
 #include <stdbool.h>
 
 extern uint32_t SystemCoreClock;
@@ -93,6 +96,12 @@ bool plc_app_init(void)
 
     plc_runtime_init();
     plc_diag_init();
+
+    UsbLog_Init();
+    UsbLog_RegisterPlcLogger();
+
+    PLC_LOGI("APP", "PLC app init");
+
     perf_timer_init();
     plc_graph_loader_init();
     plc_persist_init();
@@ -128,6 +137,7 @@ bool plc_app_init(void)
     }
 
     s_initialized = true;
+    PLC_LOGI("APP", "PLC app init done");
     return true;
 }
 
