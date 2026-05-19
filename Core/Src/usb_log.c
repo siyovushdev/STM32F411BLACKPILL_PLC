@@ -122,7 +122,16 @@ static void UsbLog_Task(void* argument)
             }
 
             if (!UsbLog_CdcReady()) {
-                continue;
+                if (s_mutex != NULL && xSemaphoreTake(s_mutex, portMAX_DELAY) == pdTRUE) {
+                    for (size_t i = len; i > 0u; i--) {
+                        s_read_pos = (s_read_pos == 0u) ? (USB_LOG_BUF_SIZE - 1u) : (s_read_pos - 1u);
+                        s_ring[s_read_pos] = chunk[i - 1u];
+                    }
+                    xSemaphoreGive(s_mutex);
+                }
+
+                vTaskDelay(pdMS_TO_TICKS(50u));
+                break;
             }
 
             const TickType_t start = xTaskGetTickCount();

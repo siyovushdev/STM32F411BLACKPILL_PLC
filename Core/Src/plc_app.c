@@ -17,6 +17,7 @@
 
 #include "usb_log.h"
 #include "friendly_plc/plc_log.h"
+#include "usb_device.h"
 
 #include <stdbool.h>
 
@@ -93,7 +94,7 @@ bool plc_app_init(void)
     if (s_initialized) {
         return true;
     }
-
+//    MX_USB_DEVICE_Init();
     plc_runtime_init();
     plc_diag_init();
 

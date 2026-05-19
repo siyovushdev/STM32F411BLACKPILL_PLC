@@ -128,6 +128,7 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM5_Init();
   MX_USART2_UART_Init();
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -670,7 +671,7 @@ static void MX_GPIO_Init(void)
 void StartPlcScanTask(void *argument)
 {
   /* init code for USB_DEVICE */
-  MX_USB_DEVICE_Init();
+
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for(;;)
