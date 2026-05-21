@@ -1,4 +1,5 @@
 #include "ad7606.h"
+#include "plc_hw_spi.h"
 
 static inline void ad7606_cs_low(AD7606_Handle *d)  { HAL_GPIO_WritePin(d->CS_Port,  d->CS_Pin,  GPIO_PIN_RESET); }
 static inline void ad7606_cs_high(AD7606_Handle *d) { HAL_GPIO_WritePin(d->CS_Port,  d->CS_Pin,  GPIO_PIN_SET);  }
@@ -82,9 +83,24 @@ HAL_StatusTypeDef AD7606_ReadRaw(AD7606_Handle *dev, int16_t out[AD7606_CH_COUNT
     uint8_t rx[AD7606_CH_COUNT * 2u] = {0};
     uint8_t tx[AD7606_CH_COUNT * 2u] = {0};
 
+    plc_hw_spi_lock();
+
+    if (!plc_hw_spi_configure_mode0()) {
+        plc_hw_spi_unlock();
+        return HAL_ERROR;
+    }
+
     ad7606_cs_low(dev);
-    HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(dev->hspi, tx, rx, (uint16_t)sizeof(rx), dev->spi_timeout_ms);
+    HAL_StatusTypeDef st = HAL_SPI_TransmitReceive(
+            dev->hspi,
+            tx,
+            rx,
+            (uint16_t)sizeof(rx),
+            dev->spi_timeout_ms
+    );
     ad7606_cs_high(dev);
+
+    plc_hw_spi_unlock();
 
     if (st != HAL_OK) {
         return st;

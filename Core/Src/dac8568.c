@@ -1,11 +1,9 @@
 #include "dac8568.h"
 #include <stdbool.h>
+#include "plc_hw_spi.h"
 
 extern SPI_HandleTypeDef hspi1;
 
-/* Optional project-level SPI2 locking. Override these weak functions if SPI2 is shared. */
-__attribute__((weak)) void spi2_lock(void) {}
-__attribute__((weak)) void spi2_unlock(void) {}
 
 static inline void dac_sync_high(void) { HAL_GPIO_WritePin(DAC_SYNC_GPIO_Port, DAC_SYNC_Pin, GPIO_PIN_SET); }
 static inline void dac_sync_low(void)  { HAL_GPIO_WritePin(DAC_SYNC_GPIO_Port, DAC_SYNC_Pin, GPIO_PIN_RESET); }
@@ -71,9 +69,14 @@ HAL_StatusTypeDef DAC8568_WriteCh(uint8_t ch, uint16_t code16)
 {
     if (ch > 7u) return HAL_ERROR;
 
-    spi2_lock();
+    plc_hw_spi_lock();
+
+if (!plc_hw_spi_configure_mode1()) {
+    plc_hw_spi_unlock();
+    return HAL_ERROR;
+}
     HAL_StatusTypeDef st = dac_tx32_unlocked(dac_make_word(0x0u, ch & 0x0Fu, code16, 0x0u));
-    spi2_unlock();
+    plc_hw_spi_unlock();
 
     return st;
 }
@@ -82,18 +85,28 @@ HAL_StatusTypeDef DAC8568_UpdateCh(uint8_t ch)
 {
     if (ch > 7u) return HAL_ERROR;
 
-    spi2_lock();
+    plc_hw_spi_lock();
+
+if (!plc_hw_spi_configure_mode1()) {
+    plc_hw_spi_unlock();
+    return HAL_ERROR;
+}
     HAL_StatusTypeDef st = dac_tx32_unlocked(dac_make_word(0x1u, ch & 0x0Fu, 0x0000u, 0x0u));
-    spi2_unlock();
+    plc_hw_spi_unlock();
 
     return st;
 }
 
 HAL_StatusTypeDef DAC8568_WriteAll(uint16_t code16)
 {
-    spi2_lock();
+    plc_hw_spi_lock();
+
+if (!plc_hw_spi_configure_mode1()) {
+    plc_hw_spi_unlock();
+    return HAL_ERROR;
+}
     HAL_StatusTypeDef st = dac_tx32_unlocked(dac_make_word(0x3u, 0xFu, code16, 0x0u));
-    spi2_unlock();
+    plc_hw_spi_unlock();
 
     return st;
 }
@@ -102,7 +115,12 @@ HAL_StatusTypeDef DAC8568_SetCh_Code(uint8_t ch, uint16_t code16)
 {
     if (ch > 7u) return HAL_ERROR;
 
-    spi2_lock();
+    plc_hw_spi_lock();
+
+if (!plc_hw_spi_configure_mode1()) {
+    plc_hw_spi_unlock();
+    return HAL_ERROR;
+}
 
     HAL_StatusTypeDef st = dac_set_bipolar_10v_unlocked();
     if (st == HAL_OK) {
@@ -110,7 +128,7 @@ HAL_StatusTypeDef DAC8568_SetCh_Code(uint8_t ch, uint16_t code16)
         st = dac_write_update_ch_unlocked(ch, code16);
     }
 
-    spi2_unlock();
+    plc_hw_spi_unlock();
     return st;
 }
 
@@ -142,26 +160,31 @@ HAL_StatusTypeDef DAC8568_Init(void)
     dac_ldac_high();
     HAL_Delay(2u);
 
-    spi2_lock();
+    plc_hw_spi_lock();
+
+if (!plc_hw_spi_configure_mode1()) {
+    plc_hw_spi_unlock();
+    return HAL_ERROR;
+}
 
     HAL_StatusTypeDef st = dac_sw_reset_unlocked();
-    if (st != HAL_OK) { spi2_unlock(); return st; }
+    if (st != HAL_OK) { plc_hw_spi_unlock(); return st; }
     HAL_Delay(10u);
 
     st = dac_internal_ref_always_on_unlocked();
-    if (st != HAL_OK) { spi2_unlock(); return st; }
+    if (st != HAL_OK) { plc_hw_spi_unlock(); return st; }
     HAL_Delay(50u);
 
     st = dac_set_bipolar_10v_unlocked();
-    if (st != HAL_OK) { spi2_unlock(); return st; }
+    if (st != HAL_OK) { plc_hw_spi_unlock(); return st; }
     HAL_Delay(20u);
 
     st = dac_power_up_all_unlocked();
-    if (st != HAL_OK) { spi2_unlock(); return st; }
+    if (st != HAL_OK) { plc_hw_spi_unlock(); return st; }
     HAL_Delay(5u);
 
     st = dac_write_update_ch_unlocked(0xFu, 0x8000u);
 
-    spi2_unlock();
+    plc_hw_spi_unlock();
     return st;
 }

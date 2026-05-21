@@ -33,8 +33,8 @@ typedef struct {
 } PlcGpioOutput;
 
 #define ARRAY_LEN(a) ((uint16_t)(sizeof(a) / sizeof((a)[0])))
-#define PLC_AI_ENABLED 0
-#define PLC_AO_ENABLED 0
+#define PLC_AI_ENABLED 1
+#define PLC_AO_ENABLED 1
 
 
 #if PLC_AI_ENABLED
