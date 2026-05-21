@@ -75,25 +75,23 @@ static bool plc_activate_staging_graph_now(void)
         return false;
     }
 
-    (void)plc_ack_faults();
+    /*
+     * Activation must not acknowledge or hide existing SAFE/FAULT state.
+     * Recovery from SAFE/FAULT is an explicit operator/system action through
+     * plc_ack_faults() or plc_runtime_reset_fault().
+     */
+    if (plc_is_safe_or_faulted() || plc_runtime_is_faulted()) {
+        plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 2, 0);
+#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
+        PLC_LOGT(PLC_LOG_TAG,
+                 "activate: rejected while state=%s runtimeFault=%u",
+                 plc_state_to_string(plc_get_state()),
+                 (unsigned)plc_runtime_is_faulted());
+#endif
+        return false;
+    }
 
     g_activeGraph = g_stagingGraph;
-    PLC_LOGI("PLC_RUNTIME",
-             "ACTIVE graph nodes=%u cycleMs=%u",
-             (unsigned)g_activeGraph.nodeCount,
-             (unsigned)g_activeGraph.cycleMs);
-
-    for (uint16_t i = 0; i < g_activeGraph.nodeCount; i++) {
-        PlcNode* n = &g_activeGraph.nodes[i];
-
-        PLC_LOGI("PLC_RUNTIME",
-                 "ACTIVE NODE[%u] id=%u type=%u paramInt=%ld paramMs=%lu",
-                 (unsigned)i,
-                 (unsigned)n->id,
-                 (unsigned)n->type,
-                 (long)n->paramInt,
-                 (unsigned long)n->paramMs);
-    }
     g_activeGraphValid = true;
     g_stagingGraphValid = false;
     g_needSwapGraph = false;
@@ -103,9 +101,16 @@ static bool plc_activate_staging_graph_now(void)
     plc_mem_reset_all();
     plc_safety_apply_safe_outputs_always();
 
+#if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
+    PLC_LOGT(PLC_LOG_TAG,
+             "activate: graph loaded (nodes=%u, cycleMs=%u)",
+             (unsigned)g_activeGraph.nodeCount,
+             (unsigned)g_activeGraph.cycleMs);
+#endif
+
     if (!plc_request_run()) {
         g_activeGraphValid = false;
-        plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 2, 0);
+        plc_event_push(PLC_EVENT_ACTIVATE_FAIL, 3, 0);
 #if PLC_LOG_ENABLED && PLC_LOG_ACTIVATE
         PLC_LOGT(PLC_LOG_TAG, "activate: request_run failed");
 #endif
@@ -128,6 +133,13 @@ static bool plc_activate_staging_graph_now(void)
 }
 
 bool plc_upload_graph(const PlcGraph *src) {
+    if (!src) {
+        g_stagingGraphValid = false;
+        plc_event_push(PLC_EVENT_VALIDATE_ERROR, (int16_t)PLC_ERR_NULL, 0);
+        plc_enter_safe(PLC_FAULT_DOMAIN_VALIDATION, PLC_FAULT_NULL_GRAPH, (int32_t)PLC_ERR_NULL);
+        return false;
+    }
+
 #if PLC_LOG_ENABLED && PLC_LOG_UPLOAD
     PLC_LOGT(PLC_LOG_TAG, "upload: requested (nodeCount=%u, cycleMs=%u)", (unsigned) src->nodeCount,
          (unsigned) src->cycleMs);
@@ -152,11 +164,6 @@ bool plc_upload_graph(const PlcGraph *src) {
     }
 
 #if PLC_LOG_ENABLED && PLC_LOG_UPLOAD
-    PLC_LOGT(PLC_LOG_TAG, "upload: graph valid (nodes=%u, cycleMs=%u)", (unsigned) g_stagingGraph.nodeCount,
-         (unsigned) g_stagingGraph.cycleMs);
-#endif
-
-#if PLC_LOG_ENABLED && PLC_LOG_UPLOAD
     PLC_LOGT(PLC_LOG_TAG,
              "upload: graph valid (nodes=%u, cycleMs=%u)",
              (unsigned) g_stagingGraph.nodeCount,
@@ -166,8 +173,6 @@ bool plc_upload_graph(const PlcGraph *src) {
     g_stagingGraphValid = true;
     g_needSwapGraph = false;
 
-    g_stagingGraphValid = true;
-    g_needSwapGraph = false;
     plc_event_push(
             PLC_EVENT_UPLOAD_OK,
             (int16_t)g_stagingGraph.nodeCount,

@@ -142,10 +142,35 @@ void plc_enter_fault(PlcFaultDomain domain, PlcFaultCode code, int32_t detail)
 
 void plc_request_stop(void)
 {
-    plc_fault_report(PLC_FAULT_DOMAIN_RUNTIME,
-                     PLC_FAULT_USER_STOP_REQUEST,
-                     PLC_FAULT_SEVERITY_WARNING,
-                     0);
+    /*
+     * STOP is a normal operator/runtime state transition, not a fault.
+     * Do not push PLC_FAULT_USER_STOP_REQUEST into fault history and do not
+     * update last_fault/last_severity. Fault history must contain only real
+     * abnormal events reported through plc_fault_report()/plc_enter_safe()/
+     * plc_enter_fault().
+     *
+     * SAFE/FAULT are abnormal protective states. A normal STOP request must
+     * not downgrade them to STOP. Recovery from SAFE/FAULT is done explicitly
+     * through plc_ack_faults().
+     */
+    if (g_plcSafety.state == PLC_STATE_SAFE ||
+        g_plcSafety.state == PLC_STATE_FAULT ||
+        g_plcSafety.fault_latched) {
+        plc_safety_apply_safe_outputs_once();
+
+#if PLC_LOG_ENABLED
+        PLC_LOGT(PLC_LOG_TAG,
+                 "stop: ignored while state=%s fault_latched=%u; use ack_faults for recovery",
+                 plc_state_to_string(g_plcSafety.state),
+                 (unsigned)g_plcSafety.fault_latched);
+#endif
+        return;
+    }
+
+#if PLC_LOG_ENABLED
+    PLC_LOGT(PLC_LOG_TAG, "stop: requested");
+#endif
+
     plc_safety_set_state(PLC_STATE_STOP);
     plc_safety_apply_safe_outputs_once();
 }
