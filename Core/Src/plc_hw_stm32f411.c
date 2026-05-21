@@ -36,6 +36,14 @@ typedef struct {
 #define PLC_AI_ENABLED 1
 #define PLC_AO_ENABLED 1
 
+static bool s_ai_available = false;
+static bool s_ao_available = false;
+static bool s_ai_fault = false;
+static bool s_ao_fault = false;
+
+static uint32_t s_ai_retry_after_ms = 0;
+static uint32_t s_ao_retry_after_ms = 0;
+
 
 #if PLC_AI_ENABLED
 static AD7606_Handle s_ad7606 = {
@@ -60,6 +68,69 @@ static uint32_t s_ai_last_tick_ms = UINT32_MAX;
 
 #if PLC_AO_ENABLED
 static PlcAo s_ao;
+#endif
+#if PLC_AI_ENABLED
+static bool ai_try_enable(void)
+{
+    const uint32_t now = HAL_GetTick();
+
+    if (s_ai_available) {
+        return true;
+    }
+
+    if (now < s_ai_retry_after_ms) {
+        return false;
+    }
+
+    s_ai_fault = false;
+
+    if (AD7606_Init(&s_ad7606) != HAL_OK) {
+        s_ai_available = false;
+        s_ai_fault = true;
+        s_ai_retry_after_ms = now + 1000u;
+        return false;
+    }
+
+    s_ai_available = true;
+    s_ai_fault = false;
+    return true;
+}
+#endif
+
+#if PLC_AO_ENABLED
+
+static bool ao_try_enable(void)
+{
+    const uint32_t now = HAL_GetTick();
+
+    if (s_ao_available) {
+        return true;
+    }
+
+    if (now < s_ao_retry_after_ms) {
+        return false;
+    }
+
+    s_ao_fault = false;
+
+    if (DAC8568_Init() != HAL_OK) {
+        s_ao_available = false;
+        s_ao_fault = true;
+        s_ao_retry_after_ms = now + 1000u;
+        return false;
+    }
+
+    if (PlcAo_ResetAllToZeroVolt(&s_ao) != HAL_OK) {
+        s_ao_available = false;
+        s_ao_fault = true;
+        s_ao_retry_after_ms = now + 1000u;
+        return false;
+    }
+
+    s_ao_available = true;
+    s_ao_fault = false;
+    return true;
+}
 #endif
 
 static bool app_read_di(uint16_t ch, void* user)
@@ -108,10 +179,19 @@ static int32_t app_read_ai_mv(uint16_t ch, void* user)
 #if PLC_AI_ENABLED
     if (ch >= PLC_AI_CH_COUNT) return 0;
 
+    if (!ai_try_enable()) {
+        return 0;
+    }
+
     const uint32_t now = HAL_GetTick();
     if (s_ai_last_tick_ms != now) {
         s_ai_last_tick_ms = now;
-        (void)PlcAi_Read(&s_ai);
+        if (PlcAi_Read(&s_ai) != HAL_OK) {
+            s_ai_available = false;
+            s_ai_fault = true;
+            s_ai_retry_after_ms = HAL_GetTick() + 1000u;
+            return 0;
+        }
     }
 
     if (!PlcAi_IsValid(&s_ai, (uint8_t)ch)) return 0;
@@ -133,7 +213,16 @@ static void app_write_ao_percent(uint16_t ch, float percent, void* user)
 
 #if PLC_AO_ENABLED
     if (ch >= 8u) return;
-    (void)PlcAo_SetPercent(&s_ao, (uint8_t)ch, percent);
+
+    if (!ao_try_enable()) {
+        return;
+    }
+
+    if (PlcAo_SetPercent(&s_ao, (uint8_t)ch, percent) != HAL_OK) {
+        s_ao_available = false;
+        s_ao_fault = true;
+        s_ao_retry_after_ms = HAL_GetTick() + 1000u;
+    }
 #else
     (void)ch;
     (void)percent;
@@ -193,7 +282,9 @@ void plc_hw_stm32f411_reset_outputs(void)
     (void)plc_hw_spi_write_do(0x0000u);
 
 #if PLC_AO_ENABLED
-    (void)PlcAo_ResetAllToZeroVolt(&s_ao);
+    if (s_ao_available) {
+        (void)PlcAo_ResetAllToZeroVolt(&s_ao);
+    }
 #endif
 }
 
@@ -202,14 +293,17 @@ bool plc_hw_stm32f411_init(void)
 //    plc_hw_stm32f411_reset_outputs();
 
 #if PLC_AI_ENABLED
-    if (AD7606_Init(&s_ad7606) != HAL_OK) return false;
     PlcAi_Init(&s_ai, &s_ad7606);
+    s_ai_available = false;
+    s_ai_fault = false;
+    s_ai_retry_after_ms = 0;
 #endif
 
 #if PLC_AO_ENABLED
     PlcAo_Init(&s_ao);
-    if (DAC8568_Init() != HAL_OK) return false;
-    (void)PlcAo_ResetAllToZeroVolt(&s_ao);
+    s_ao_available = false;
+    s_ao_fault = false;
+    s_ao_retry_after_ms = 0;
 #endif
 
     if (HAL_TIM_Base_Start(&htim1) != HAL_OK) return false;
