@@ -586,7 +586,8 @@ static bool send_nodes_snapshot(uint16_t seq, const uint8_t* body, uint16_t body
         put_u32(&p[44], ns.toffLeftMs);
         put_i32(&p[48], ns.acc);
         put_u32(&p[52], bool_flag(ns.prevClk));
-        put_u32(&p[56], 0u);
+        put_u16(&p[56], (uint16_t)ns.inA);
+        put_u16(&p[58], (uint16_t)ns.inB);
         put_u32(&p[60], 0u);
     }
 

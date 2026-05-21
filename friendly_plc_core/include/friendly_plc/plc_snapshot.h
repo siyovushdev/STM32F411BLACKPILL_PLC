@@ -36,6 +36,9 @@ typedef struct
     PlcNodeType type;
     uint32_t flags;
 
+    int16_t inA;
+    int16_t inB;
+
     bool outB;
     int32_t outI;
     float outF;

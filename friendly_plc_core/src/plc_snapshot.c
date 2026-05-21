@@ -68,6 +68,9 @@ bool plc_snapshot_get_node(uint16_t index, PlcNodeSnapshot* out)
     out->type = n->type;
     out->flags = n->flags;
 
+    out->inA = n->inA;
+    out->inB = n->inB;
+
     out->outB = n->out.b;
     out->outI = n->out.i;
     out->outF = n->out.f;
